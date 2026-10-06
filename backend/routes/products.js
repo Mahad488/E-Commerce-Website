@@ -1,6 +1,7 @@
 const express = require("express");
 
 const { db } = require("../config/db");
+const { verifyAdmin } = require("./admin");
 
 const router = express.Router();
 
@@ -127,6 +128,46 @@ router.get("/:id", async (req, res) => {
       success: false,
       message: "Failed to fetch product",
     });
+  }
+});
+
+// Admin: Add a new product
+router.post("/", verifyAdmin, async (req, res) => {
+  try {
+    const { name, category, description, price, oldPrice, image, stock, rating } = req.body;
+    if (!name || !price || !category) {
+      return res.status(400).json({ success: false, message: "Name, category and price are required" });
+    }
+
+    const [result] = await db.execute(
+      "INSERT INTO products (name, category, description, price, old_price, image, stock, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        name,
+        category,
+        description || "",
+        price,
+        oldPrice || null,
+        image || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600",
+        stock || 10,
+        rating || 4.5,
+      ]
+    );
+
+    return res.status(201).json({ success: true, message: "Product created successfully", id: result.insertId });
+  } catch (error) {
+    console.error("Create product error:", error);
+    return res.status(500).json({ success: false, message: "Failed to create product" });
+  }
+});
+
+// Admin: Delete a product
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  try {
+    await db.execute("DELETE FROM products WHERE id = ?", [req.params.id]);
+    return res.json({ success: true, message: "Product deleted" });
+  } catch (error) {
+    console.error("Delete product error:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete product" });
   }
 });
 

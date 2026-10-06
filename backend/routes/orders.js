@@ -2,11 +2,12 @@ const express = require("express");
 
 const { db } = require("../config/db");
 const verifyToken = require("../middleware/authMiddleware");
+const { verifyAdmin } = require("./admin");
 
 const router = express.Router();
 
 router.post("/", verifyToken, async (req, res) => {
-  const { items } = req.body || {};
+  const { items, address, mobile_number, city, country, payment_method } = req.body || {};
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({
@@ -100,8 +101,17 @@ router.post("/", verifyToken, async (req, res) => {
     }
 
     const [orderResult] = await connection.query(
-      "INSERT INTO orders (user_id, total_amount, status) VALUES (?, ?, ?)",
-      [req.user.id, (totalCents / 100).toFixed(2), "Pending"]
+      "INSERT INTO orders (user_id, total_amount, status, address, mobile_number, city, country, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        req.user.id,
+        (totalCents / 100).toFixed(2),
+        "Pending",
+        address || null,
+        mobile_number || null,
+        city || null,
+        country || null,
+        payment_method || "COD",
+      ]
     );
     const orderId = orderResult.insertId;
 
@@ -155,6 +165,113 @@ router.get("/my-orders", verifyToken, async (req, res) => {
       success: false,
       message: "Server error while fetching orders",
     });
+  }
+});
+
+// Admin: Fetch all orders across all users with delivery details & items
+router.get("/all", verifyAdmin, async (req, res) => {
+  try {
+    const [orders] = await db.query(
+      `SELECT orders.*, users.name as user_name, users.email as user_email 
+       FROM orders 
+       LEFT JOIN users ON orders.user_id = users.id 
+       ORDER BY orders.created_at DESC`
+    );
+
+    // Fetch order items for all orders to display in admin modal
+    if (orders.length > 0) {
+      const orderIds = orders.map(o => o.id);
+      const placeholders = orderIds.map(() => "?").join(",");
+      const [items] = await db.query(
+        `SELECT oi.*, p.name as product_name, p.image as product_image 
+         FROM order_items oi 
+         LEFT JOIN products p ON oi.product_id = p.id 
+         WHERE oi.order_id IN (${placeholders})`,
+        orderIds
+      );
+
+      const itemsByOrder = new Map();
+      items.forEach(item => {
+        if (!itemsByOrder.has(item.order_id)) {
+          itemsByOrder.set(item.order_id, []);
+        }
+        itemsByOrder.get(item.order_id).push(item);
+      });
+
+      orders.forEach(order => {
+        order.items = itemsByOrder.get(order.id) || [];
+      });
+    }
+
+    return res.json({ success: true, orders });
+  } catch (error) {
+    console.error("Fetch all orders error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch orders" });
+  }
+});
+
+// Admin: Update order status
+router.patch("/:id/status", verifyAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    await db.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
+    return res.json({ success: true, message: "Order status updated" });
+  } catch (error) {
+    console.error("Update status error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update status" });
+  }
+});
+
+// User: Cancel an order (only if status is Pending)
+router.delete("/cancel/:id", verifyToken, async (req, res) => {
+  const orderId = Number(req.params.id);
+
+  if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid order ID" });
+  }
+
+  try {
+    const [rows] = await db.query(
+      "SELECT id, status, user_id FROM orders WHERE id = ?",
+      [orderId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const order = rows[0];
+
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: "You can only cancel your own orders" });
+    }
+
+    if (order.status !== "Pending") {
+      return res.status(403).json({
+        success: false,
+        message: `Order cannot be cancelled — it is already ${order.status}`,
+      });
+    }
+
+    // Restore stock for each cancelled item
+    const [items] = await db.query(
+      "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
+      [orderId]
+    );
+    for (const item of items) {
+      await db.query(
+        "UPDATE products SET stock = stock + ? WHERE id = ?",
+        [item.quantity, item.product_id]
+      );
+    }
+
+    await db.query("DELETE FROM order_items WHERE order_id = ?", [orderId]);
+    await db.query("DELETE FROM orders WHERE id = ?", [orderId]);
+
+    return res.json({ success: true, message: "Order cancelled successfully" });
+  } catch (error) {
+    console.error("Cancel order error:", error);
+    return res.status(500).json({ success: false, message: "Failed to cancel order" });
   }
 });
 

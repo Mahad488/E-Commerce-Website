@@ -207,4 +207,80 @@ router.get("/profile", authenticateToken, async (req, res) => {
   }
 });
 
+router.put("/change-password", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+    }
+
+    // Strong password validation
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 8 characters long",
+      });
+    }
+
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
+
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Strong password required: must contain uppercase, lowercase, number, and special character",
+      });
+    }
+
+    // Fetch user current password hash
+    const [users] = await db.execute(
+      "SELECT id, password FROM users WHERE id = ?",
+      [req.user.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const user = users[0];
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    // Hash new password and update
+    const newHashedPassword = await bcrypt.hash(newPassword, 12);
+    await db.execute(
+      "UPDATE users SET password = ? WHERE id = ?",
+      [newHashedPassword, req.user.id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Password updated successfully!",
+    });
+  } catch (error) {
+    console.error("Change password error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
+
 module.exports = router;

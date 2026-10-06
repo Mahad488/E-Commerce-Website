@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
 
@@ -26,7 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const savedUser = localStorage.getItem("nova_user");
-
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
@@ -47,15 +47,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, token]);
 
-  const setSession = (newUser: AuthUser, newToken: string) => {
+  const setSession = useCallback((newUser: AuthUser, newToken: string) => {
     setUser(newUser);
     setToken(newToken);
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     setToken(null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -72,7 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// The context hook is intentionally colocated with its provider.
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);

@@ -7,6 +7,9 @@ const { testConnection } = require("./config/db");
 const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
+const { adminRouter } = require("./routes/admin");
+
+const path = require("path");
 
 const app = express();
 
@@ -17,10 +20,13 @@ app.use(
 );
 
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/admin", adminRouter);
 
 app.get("/", (req, res) => {
   res.json({

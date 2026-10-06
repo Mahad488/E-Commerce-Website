@@ -6,8 +6,10 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
 import { products } from "../data/products";
+import { useCart } from "../context/CartContext";
 
 function ProductDetails() {
+  const { addToCart } = useCart();
   const { id } = useParams();
 
   const product = products.find((item) => item.id === Number(id));
@@ -155,6 +157,11 @@ function ProductDetails() {
             </div>
 
             <button
+              onClick={() => {
+                for (let i = 0; i < quantity; i++) {
+                  addToCart(product);
+                }
+              }}
               disabled={product.stock === 0}
               className="mt-8 w-full bg-black text-white py-4 rounded-full flex items-center justify-center gap-3 hover:bg-orange-500 transition disabled:opacity-50"
             >

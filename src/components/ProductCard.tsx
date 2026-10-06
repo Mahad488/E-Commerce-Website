@@ -1,12 +1,15 @@
 import { Heart, ShoppingCart, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Product } from "../data/products";
+import { useCart } from "../context/CartContext";
 
 interface ProductCardProps {
   product: Product;
 }
 
 function ProductCard({ product }: ProductCardProps) {
+  const { addToCart } = useCart();
+
   return (
     <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-xl transition duration-300 group">
 
@@ -31,13 +34,13 @@ function ProductCard({ product }: ProductCardProps) {
           <Heart size={18} />
         </button>
 
-        <Link
-          to={`/products/${product.id}`}
+        <button
+          onClick={() => addToCart(product)}
           className="absolute bottom-4 left-4 right-4 bg-black text-white py-3 rounded-full flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition"
         >
           <ShoppingCart size={17} />
-          View Product
-        </Link>
+          Add to Cart
+        </button>
 
       </div>
 

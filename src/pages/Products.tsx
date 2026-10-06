@@ -1,13 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ProductCard from "../components/ProductCard";
 
-import { products } from "../data/products";
+import { API_BASE_URL } from "../config/api";
+import type { Product } from "../data/products";
 
 function Products() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("default");
@@ -21,6 +26,40 @@ function Products() {
     "Lifestyle",
   ];
 
+  // Fetch products from backend
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        setApiError("");
+
+        const response = await fetch(
+          `${API_BASE_URL}/api/products`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || "Failed to fetch products"
+          );
+        }
+
+        setProducts(data.products || []);
+      } catch (error) {
+        console.error("Products API error:", error);
+
+        setApiError(
+          "Unable to load products. Please try again."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
+
   const filteredProducts = useMemo(() => {
     const result = products.filter((product) => {
       const matchesSearch = product.name
@@ -28,7 +67,8 @@ function Products() {
         .includes(search.toLowerCase());
 
       const matchesCategory =
-        category === "All" || product.category === category;
+        category === "All" ||
+        product.category === category;
 
       return matchesSearch && matchesCategory;
     });
@@ -42,11 +82,13 @@ function Products() {
     }
 
     if (sort === "name") {
-      result.sort((a, b) => a.name.localeCompare(b.name));
+      result.sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
     }
 
     return result;
-  }, [search, category, sort]);
+  }, [products, search, category, sort]);
 
   return (
     <div className="min-h-screen bg-white">
@@ -55,9 +97,7 @@ function Products() {
 
       {/* Page Header */}
       <section className="bg-[#f5f2ed] py-14">
-
         <div className="max-w-7xl mx-auto px-5 lg:px-8">
-
           <p className="text-orange-500 text-sm font-semibold uppercase tracking-widest">
             Our Collection
           </p>
@@ -69,7 +109,6 @@ function Products() {
           <p className="text-gray-600 mt-3">
             Discover products made for your lifestyle.
           </p>
-
         </div>
       </section>
 
@@ -80,18 +119,26 @@ function Products() {
         <div className="flex flex-col md:flex-row gap-4 justify-between mb-8">
 
           <div className="flex items-center gap-3 bg-gray-100 rounded-xl px-4 py-3 w-full md:max-w-md">
-            <Search size={19} className="text-gray-500" />
+            <Search
+              size={19}
+              className="text-gray-500"
+            />
 
             <input
               type="text"
               placeholder="Search products..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) =>
+                setSearch(e.target.value)
+              }
               className="bg-transparent outline-none w-full text-sm"
             />
 
             {search && (
-              <button onClick={() => setSearch("")} aria-label="Clear search">
+              <button
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+              >
                 <X size={17} />
               </button>
             )}
@@ -100,7 +147,9 @@ function Products() {
           <div className="flex gap-3">
 
             <button
-              onClick={() => setMobileFilter(!mobileFilter)}
+              onClick={() =>
+                setMobileFilter(!mobileFilter)
+              }
               className="md:hidden border rounded-xl px-4 py-3 flex items-center gap-2"
             >
               <SlidersHorizontal size={17} />
@@ -109,13 +158,26 @@ function Products() {
 
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value)}
+              onChange={(e) =>
+                setSort(e.target.value)
+              }
               className="border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white"
             >
-              <option value="default">Sort By: Default</option>
-              <option value="low-high">Price: Low to High</option>
-              <option value="high-low">Price: High to Low</option>
-              <option value="name">Name: A to Z</option>
+              <option value="default">
+                Sort By: Default
+              </option>
+
+              <option value="low-high">
+                Price: Low to High
+              </option>
+
+              <option value="high-low">
+                Price: High to Low
+              </option>
+
+              <option value="name">
+                Name: A to Z
+              </option>
             </select>
 
           </div>
@@ -124,8 +186,11 @@ function Products() {
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-8">
 
           {/* Sidebar */}
-          <aside className={`${mobileFilter ? "block" : "hidden"} md:block`}>
-
+          <aside
+            className={`${
+              mobileFilter ? "block" : "hidden"
+            } md:block`}
+          >
             <div className="border border-gray-100 rounded-2xl p-5 sticky top-28">
 
               <h3 className="font-bold text-lg mb-5">
@@ -164,7 +229,9 @@ function Products() {
                 </p>
 
                 <button
-                  onClick={() => setSort("low-high")}
+                  onClick={() =>
+                    setSort("low-high")
+                  }
                   className="mt-4 text-sm text-orange-500 font-semibold"
                 >
                   Lowest Price First →
@@ -203,44 +270,83 @@ function Products() {
 
             </div>
 
-            {filteredProducts.length > 0 ? (
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-
-                {filteredProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                  />
-                ))}
-
-              </div>
-
-            ) : (
-
+            {/* Loading */}
+            {loading && (
               <div className="text-center py-20 bg-gray-50 rounded-2xl">
+                <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-orange-500" />
 
-                <h3 className="text-xl font-bold">
-                  No Products Found
+                <p className="mt-4 text-gray-500">
+                  Loading products...
+                </p>
+              </div>
+            )}
+
+            {/* API Error */}
+            {!loading && apiError && (
+              <div className="text-center py-20 bg-red-50 rounded-2xl">
+
+                <h3 className="text-xl font-bold text-red-700">
+                  Something went wrong
                 </h3>
 
-                <p className="text-gray-500 mt-2">
-                  Try another search or category.
+                <p className="text-red-600 mt-2">
+                  {apiError}
                 </p>
 
                 <button
-                  onClick={() => {
-                    setSearch("");
-                    setCategory("All");
-                  }}
+                  onClick={() =>
+                    window.location.reload()
+                  }
                   className="mt-5 bg-black text-white px-6 py-3 rounded-full"
                 >
-                  Clear Filters
+                  Try Again
                 </button>
 
               </div>
-
             )}
+
+            {/* Products */}
+            {!loading &&
+              !apiError &&
+              filteredProducts.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+
+                  {filteredProducts.map((product) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                    />
+                  ))}
+
+                </div>
+              )}
+
+            {/* No Products */}
+            {!loading &&
+              !apiError &&
+              filteredProducts.length === 0 && (
+                <div className="text-center py-20 bg-gray-50 rounded-2xl">
+
+                  <h3 className="text-xl font-bold">
+                    No Products Found
+                  </h3>
+
+                  <p className="text-gray-500 mt-2">
+                    Try another search or category.
+                  </p>
+
+                  <button
+                    onClick={() => {
+                      setSearch("");
+                      setCategory("All");
+                    }}
+                    className="mt-5 bg-black text-white px-6 py-3 rounded-full"
+                  >
+                    Clear Filters
+                  </button>
+
+                </div>
+              )}
 
           </div>
         </div>

@@ -13,6 +13,8 @@ import type { Product } from "../data/products";
 export interface CartItem {
   product: Product;
   quantity: number;
+  selectedColor?: string;
+  selectedColorImage?: string;
 }
 
 interface CartState {
@@ -20,18 +22,18 @@ interface CartState {
 }
 
 type CartAction =
-  | { type: "ADD_TO_CART"; product: Product }
-  | { type: "REMOVE_FROM_CART"; productId: number }
-  | { type: "INCREASE_QUANTITY"; productId: number }
-  | { type: "DECREASE_QUANTITY"; productId: number }
+  | { type: "ADD_TO_CART"; product: Product; selectedColor?: string; selectedColorImage?: string }
+  | { type: "REMOVE_FROM_CART"; productId: number; selectedColor?: string }
+  | { type: "INCREASE_QUANTITY"; productId: number; selectedColor?: string }
+  | { type: "DECREASE_QUANTITY"; productId: number; selectedColor?: string }
   | { type: "CLEAR_CART" };
 
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: Product) => void;
-  removeFromCart: (productId: number) => void;
-  increaseQuantity: (productId: number) => void;
-  decreaseQuantity: (productId: number) => void;
+  addToCart: (product: Product, selectedColor?: string, selectedColorImage?: string) => void;
+  removeFromCart: (productId: number, selectedColor?: string) => void;
+  increaseQuantity: (productId: number, selectedColor?: string) => void;
+  decreaseQuantity: (productId: number, selectedColor?: string) => void;
   clearCart: () => void;
   cartCount: number;
   subtotal: number;
@@ -52,14 +54,17 @@ function cartReducer(
   switch (action.type) {
     case "ADD_TO_CART": {
       const existingItem = state.items.find(
-        (item) => item.product.id === action.product.id
+        (item) =>
+          item.product.id === action.product.id &&
+          (item.selectedColor || "") === (action.selectedColor || "")
       );
 
       if (existingItem) {
         return {
           ...state,
           items: state.items.map((item) =>
-            item.product.id === action.product.id
+            item.product.id === action.product.id &&
+            (item.selectedColor || "") === (action.selectedColor || "")
               ? {
                   ...item,
                   quantity: Math.min(
@@ -83,6 +88,8 @@ function cartReducer(
           {
             product: action.product,
             quantity: 1,
+            selectedColor: action.selectedColor,
+            selectedColorImage: action.selectedColorImage,
           },
         ],
       };
@@ -92,7 +99,11 @@ function cartReducer(
       return {
         ...state,
         items: state.items.filter(
-          (item) => item.product.id !== action.productId
+          (item) =>
+            !(
+              item.product.id === action.productId &&
+              (!action.selectedColor || item.selectedColor === action.selectedColor)
+            )
         ),
       };
 
@@ -100,7 +111,8 @@ function cartReducer(
       return {
         ...state,
         items: state.items.map((item) =>
-          item.product.id === action.productId
+          item.product.id === action.productId &&
+          (!action.selectedColor || item.selectedColor === action.selectedColor)
             ? {
                 ...item,
                 quantity: Math.min(
@@ -117,7 +129,8 @@ function cartReducer(
         ...state,
         items: state.items
           .map((item) =>
-            item.product.id === action.productId
+            item.product.id === action.productId &&
+            (!action.selectedColor || item.selectedColor === action.selectedColor)
               ? {
                   ...item,
                   quantity: item.quantity - 1,
@@ -181,20 +194,20 @@ export function CartProvider({ children }: CartProviderProps) {
     );
   }, [state.items]);
 
-  const addToCart = (product: Product) => {
-    dispatch({ type: "ADD_TO_CART", product });
+  const addToCart = (product: Product, selectedColor?: string, selectedColorImage?: string) => {
+    dispatch({ type: "ADD_TO_CART", product, selectedColor, selectedColorImage });
   };
 
-  const removeFromCart = (productId: number) => {
-    dispatch({ type: "REMOVE_FROM_CART", productId });
+  const removeFromCart = (productId: number, selectedColor?: string) => {
+    dispatch({ type: "REMOVE_FROM_CART", productId, selectedColor });
   };
 
-  const increaseQuantity = (productId: number) => {
-    dispatch({ type: "INCREASE_QUANTITY", productId });
+  const increaseQuantity = (productId: number, selectedColor?: string) => {
+    dispatch({ type: "INCREASE_QUANTITY", productId, selectedColor });
   };
 
-  const decreaseQuantity = (productId: number) => {
-    dispatch({ type: "DECREASE_QUANTITY", productId });
+  const decreaseQuantity = (productId: number, selectedColor?: string) => {
+    dispatch({ type: "DECREASE_QUANTITY", productId, selectedColor });
   };
 
   const clearCart = () => {

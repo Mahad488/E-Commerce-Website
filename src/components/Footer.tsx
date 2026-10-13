@@ -1,100 +1,165 @@
-import {
-  Globe,
-  Mail,
-  MessageCircle,
-  Send,
-} from "lucide-react";
+import { Globe, Mail, MessageCircle, Send, CheckCircle2 } from "lucide-react";
+import { useState } from "react";
 
-function Footer() {
+export default function Footer() {
+  const [subscribed, setSubscribed] = useState(false);
+  const [email, setEmail] = useState("");
+
+  const handleSubscribe = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      setSubscribed(true);
+      setTimeout(() => {
+        setSubscribed(false);
+        setEmail("");
+      }, 4000);
+    }
+  };
+
   return (
-    <footer id="footer" className="bg-[#111111] text-white pt-16 pb-8">
-
+    <footer id="footer" className="bg-neutral-950 text-white pt-20 pb-12 border-t border-neutral-900">
       <div className="max-w-7xl mx-auto px-5 lg:px-8">
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8">
+          
           {/* Brand */}
           <div>
-
-            <h2 className="text-3xl font-black">
+            <h2 className="text-3xl font-black tracking-tight">
               NOVA<span className="text-orange-500">.</span>
             </h2>
 
-            <p className="text-gray-400 text-sm leading-7 mt-5 max-w-xs">
-              Your destination for modern lifestyle, fashion,
-              electronics, and everyday essentials.
+            <p className="text-neutral-400 text-sm leading-relaxed mt-5 max-w-xs font-normal">
+              Your modern destination for premium lifestyle, timeless fashion, tech accessories, and everyday essentials.
             </p>
 
-            <div className="flex gap-4 mt-6">
-              <Globe size={19} className="text-gray-400 hover:text-orange-500 cursor-pointer" />
-              <MessageCircle size={19} className="text-gray-400 hover:text-orange-500 cursor-pointer" />
-              <Mail size={19} className="text-gray-400 hover:text-orange-500 cursor-pointer" />
+            <div className="flex gap-3.5 mt-6">
+              <a
+                href="#footer"
+                aria-label="Website"
+                className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-orange-500/50 hover:scale-110 active:scale-95 transition-all duration-200"
+              >
+                <Globe size={18} />
+              </a>
+              <a
+                href="#footer"
+                aria-label="Community"
+                className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-orange-500/50 hover:scale-110 active:scale-95 transition-all duration-200"
+              >
+                <MessageCircle size={18} />
+              </a>
+              <a
+                href="mailto:support@novastore.com"
+                aria-label="Email"
+                className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-orange-500/50 hover:scale-110 active:scale-95 transition-all duration-200"
+              >
+                <Mail size={18} />
+              </a>
             </div>
-
           </div>
 
-          {/* Links */}
+          {/* Quick Links */}
           <div>
-            <h3 className="font-semibold text-lg mb-5">Quick Links</h3>
+            <h3 className="font-bold text-base mb-5 text-white tracking-wide">
+              Quick Links
+            </h3>
 
-            <ul className="space-y-3 text-sm text-gray-400">
-              <li><a href="/" className="hover:text-white">Home</a></li>
-              <li><a href="#categories" className="hover:text-white">Categories</a></li>
-              <li><a href="#products" className="hover:text-white">Shop</a></li>
-              <li><a href="#footer" className="hover:text-white">About Us</a></li>
+            <ul className="space-y-3 text-sm text-neutral-400 font-medium">
+              <li>
+                <a href="/" className="hover:text-orange-400 transition-colors">
+                  Home Catalog
+                </a>
+              </li>
+              <li>
+                <a href="#categories" className="hover:text-orange-400 transition-colors">
+                  Browse Categories
+                </a>
+              </li>
+              <li>
+                <a href="#products" className="hover:text-orange-400 transition-colors">
+                  Featured Deals
+                </a>
+              </li>
+              <li>
+                <a href="#footer" className="hover:text-orange-400 transition-colors">
+                  About NOVA
+                </a>
+              </li>
             </ul>
           </div>
 
-          {/* Customer Service */}
+          {/* Customer Support */}
           <div>
-            <h3 className="font-semibold text-lg mb-5">Customer Service</h3>
+            <h3 className="font-bold text-base mb-5 text-white tracking-wide">
+              Customer Support
+            </h3>
 
-            <ul className="space-y-3 text-sm text-gray-400">
-              <li>Contact Us</li>
-              <li>Shipping Policy</li>
-              <li>Returns & Refunds</li>
-              <li>Privacy Policy</li>
+            <ul className="space-y-3 text-sm text-neutral-400 font-medium">
+              <li className="hover:text-orange-400 transition-colors cursor-pointer">
+                24/7 Live Chat Help
+              </li>
+              <li className="hover:text-orange-400 transition-colors cursor-pointer">
+                Global Track Order
+              </li>
+              <li className="hover:text-orange-400 transition-colors cursor-pointer">
+                Easy Returns & Warranty
+              </li>
+              <li className="hover:text-orange-400 transition-colors cursor-pointer">
+                Privacy & Security Notice
+              </li>
             </ul>
           </div>
 
           {/* Newsletter */}
           <div>
-            <h3 className="font-semibold text-lg mb-5">Stay Updated</h3>
+            <h3 className="font-bold text-base mb-5 text-white tracking-wide">
+              Stay in the Loop
+            </h3>
 
-            <p className="text-sm text-gray-400 leading-6">
-              Subscribe to receive updates about new products and offers.
+            <p className="text-sm text-neutral-400 leading-relaxed font-normal">
+              Subscribe for VIP flash drops, early product releases, and private sale codes.
             </p>
 
-            <form
-              className="flex mt-5 bg-white rounded-full p-1"
-              onSubmit={(e) => e.preventDefault()}
-            >
-              <input
-                type="email"
-                placeholder="Your email"
-                aria-label="Your email"
-                className="min-w-0 flex-1 px-4 text-sm text-black outline-none rounded-full"
-              />
-
-              <button
-                type="submit"
-                aria-label="Subscribe"
-                className="bg-orange-500 p-3 rounded-full hover:bg-orange-600"
+            {subscribed ? (
+              <div className="mt-5 p-3.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-300">
+                <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                <span>You're in! Check your inbox for 15% off.</span>
+              </div>
+            ) : (
+              <form
+                className="flex items-center mt-5 bg-neutral-900 border border-neutral-800 rounded-full p-1.5 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/20 transition-all duration-300"
+                onSubmit={handleSubscribe}
               >
-                <Send size={17} />
-              </button>
-            </form>
+                <input
+                  type="email"
+                  required
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="min-w-0 flex-1 px-4 text-xs sm:text-sm text-white placeholder-neutral-500 outline-none bg-transparent"
+                />
+
+                <button
+                  type="submit"
+                  aria-label="Subscribe to newsletter"
+                  className="bg-orange-600 text-white p-2.5 sm:px-4 sm:py-2.5 rounded-full hover:bg-orange-500 hover:shadow-lg hover:shadow-orange-500/25 active:scale-95 transition-all duration-200 flex items-center gap-1.5 text-xs font-bold"
+                >
+                  <Send size={15} />
+                  <span className="hidden sm:inline">Join</span>
+                </button>
+              </form>
+            )}
           </div>
 
         </div>
 
-        <div className="border-t border-gray-800 mt-14 pt-7 text-center text-sm text-gray-500">
-          © 2026 NOVA Store. All rights reserved.
+        <div className="border-t border-neutral-900 mt-16 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
+          <p>© 2026 NOVA Store. All rights reserved.</p>
+          <div className="flex gap-6">
+            <span className="hover:text-neutral-400 cursor-pointer transition">Terms</span>
+            <span className="hover:text-neutral-400 cursor-pointer transition">Privacy</span>
+            <span className="hover:text-neutral-400 cursor-pointer transition">Cookies</span>
+          </div>
         </div>
-
       </div>
     </footer>
   );
 }
-
-export default Footer;

@@ -7,7 +7,6 @@ import Footer from "../components/Footer";
 import { useWishlist } from "../context/WishlistContext";
 import { useCart } from "../context/CartContext";
 import { useToast } from "../context/ToastContext";
-import ProductCard from "../components/ProductCard";
 
 export default function Wishlist() {
   const { wishlist, removeFromWishlist } = useWishlist();

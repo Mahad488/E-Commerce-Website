@@ -75,15 +75,15 @@ function Cart() {
               <div className="divide-y">
                 {items.map((item) => (
                   <div
-                    key={item.product.id}
+                    key={`${item.product.id}-${item.selectedColor || "default"}`}
                     className="grid grid-cols-1 md:grid-cols-[1fr_130px_130px_80px] gap-5 items-center py-6"
                   >
                     {/* Product */}
                     <div className="flex gap-4 items-center">
                       <img
-                        src={item.product.image}
+                        src={item.selectedColorImage || item.product.image}
                         alt={item.product.name}
-                        className="w-24 h-28 object-cover rounded-xl bg-gray-100"
+                        className="w-24 h-28 object-cover rounded-xl bg-gray-100 border shrink-0"
                       />
 
                       <div>
@@ -95,10 +95,18 @@ function Cart() {
                           {item.product.name}
                         </h3>
 
+                        {item.selectedColor && (
+                          <div className="mt-1">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-md">
+                              Color: <span className="text-orange-600">{item.selectedColor}</span>
+                            </span>
+                          </div>
+                        )}
+
                         <p className="text-sm text-gray-500 mt-2">In Stock</p>
 
                         <button
-                          onClick={() => removeFromCart(item.product.id)}
+                          onClick={() => removeFromCart(item.product.id, item.selectedColor)}
                           className="flex items-center gap-1 text-red-500 text-sm mt-3 hover:text-red-700"
                         >
                           <Trash2 size={15} />
@@ -118,7 +126,7 @@ function Cart() {
                     {/* Quantity */}
                     <div className="flex items-center border rounded-xl w-fit">
                       <button
-                        onClick={() => decreaseQuantity(item.product.id)}
+                        onClick={() => decreaseQuantity(item.product.id, item.selectedColor)}
                         aria-label="Decrease quantity"
                         className="p-3 hover:bg-gray-100"
                       >
@@ -130,7 +138,7 @@ function Cart() {
                       </span>
 
                       <button
-                        onClick={() => increaseQuantity(item.product.id)}
+                        onClick={() => increaseQuantity(item.product.id, item.selectedColor)}
                         disabled={item.quantity >= item.product.stock}
                         aria-label="Increase quantity"
                         className="p-3 hover:bg-gray-100 disabled:opacity-40"

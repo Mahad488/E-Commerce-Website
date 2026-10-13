@@ -29,7 +29,8 @@ router.get("/", async (req, res) => {
       old_price AS oldPrice,
       image,
       stock,
-      rating
+      rating,
+      colors
     FROM products
     WHERE 1 = 1`;
     const queryParams = [];
@@ -71,9 +72,24 @@ router.get("/", async (req, res) => {
     }
 
     const [products] = await db.execute(query, queryParams);
+    const formattedProducts = products.map((p) => {
+      let parsedColors = [];
+      if (p.colors) {
+        try {
+          parsedColors = typeof p.colors === "string" ? JSON.parse(p.colors) : p.colors;
+        } catch {
+          parsedColors = [];
+        }
+      }
+      return {
+        ...p,
+        colors: Array.isArray(parsedColors) ? parsedColors : [],
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      products,
+      products: formattedProducts,
     });
   } catch (error) {
     console.error("Products fetch error:", error.message);
@@ -105,7 +121,8 @@ router.get("/:id", async (req, res) => {
         old_price AS oldPrice,
         image,
         stock,
-        rating
+        rating,
+        colors
       FROM products
       WHERE id = ?`,
       [productId]
@@ -118,9 +135,24 @@ router.get("/:id", async (req, res) => {
       });
     }
 
+    let parsedColors = [];
+    if (products[0].colors) {
+      try {
+        parsedColors =
+          typeof products[0].colors === "string"
+            ? JSON.parse(products[0].colors)
+            : products[0].colors;
+      } catch {
+        parsedColors = [];
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      product: products[0],
+      product: {
+        ...products[0],
+        colors: Array.isArray(parsedColors) ? parsedColors : [],
+      },
     });
   } catch (error) {
     console.error("Product fetch error:", error.message);
@@ -134,13 +166,19 @@ router.get("/:id", async (req, res) => {
 // Admin: Add a new product
 router.post("/", verifyAdmin, async (req, res) => {
   try {
-    const { name, category, description, price, oldPrice, image, stock, rating } = req.body;
+    const { name, category, description, price, oldPrice, image, stock, rating, colors } = req.body;
     if (!name || !price || !category) {
       return res.status(400).json({ success: false, message: "Name, category and price are required" });
     }
 
+    const colorsJson = Array.isArray(colors)
+      ? JSON.stringify(colors)
+      : typeof colors === "string"
+      ? colors
+      : null;
+
     const [result] = await db.execute(
-      "INSERT INTO products (name, category, description, price, old_price, image, stock, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO products (name, category, description, price, old_price, image, stock, rating, colors) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         name,
         category,
@@ -149,7 +187,8 @@ router.post("/", verifyAdmin, async (req, res) => {
         oldPrice || null,
         image || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600",
         stock || 10,
-        rating || 4.5,
+        rating !== undefined && rating !== null ? Number(rating) : 0,
+        colorsJson,
       ]
     );
 
@@ -159,6 +198,57 @@ router.post("/", verifyAdmin, async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to create product" });
   }
 });
+
+// Admin: Update a product (edit details, price, sales/discount, stock, colors)
+router.put("/:id", verifyAdmin, async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+    if (!Number.isSafeInteger(productId) || productId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid product ID" });
+    }
+
+    const { name, category, description, price, oldPrice, image, stock, rating, colors } = req.body;
+
+    if (!name || price === undefined || price === null || !category) {
+      return res.status(400).json({ success: false, message: "Name, category, and price are required" });
+    }
+
+    const [existing] = await db.execute("SELECT id FROM products WHERE id = ?", [productId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const colorsJson = Array.isArray(colors)
+      ? JSON.stringify(colors)
+      : typeof colors === "string"
+      ? colors
+      : null;
+
+    await db.execute(
+      `UPDATE products 
+       SET name = ?, category = ?, description = ?, price = ?, old_price = ?, image = ?, stock = ?, rating = ?, colors = ?
+       WHERE id = ?`,
+      [
+        name,
+        category,
+        description !== undefined ? description : "",
+        Number(price),
+        oldPrice !== undefined && oldPrice !== null && oldPrice !== "" ? Number(oldPrice) : null,
+        image || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600",
+        stock !== undefined ? Number(stock) : 10,
+        rating !== undefined && rating !== null ? Number(rating) : 0,
+        colorsJson,
+        productId,
+      ]
+    );
+
+    return res.json({ success: true, message: "Product updated successfully" });
+  } catch (error) {
+    console.error("Update product error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update product" });
+  }
+});
+
 
 // Admin: Delete a product
 router.delete("/:id", verifyAdmin, async (req, res) => {

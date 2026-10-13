@@ -30,7 +30,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    }, 3600);
   }, []);
 
   const removeToast = (id: string) => {
@@ -41,37 +41,61 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       {/* Toast Notification Container */}
-      <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-3 max-w-sm w-full px-4 pointer-events-none">
+      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full px-4 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-center justify-between gap-3 p-4 rounded-2xl shadow-xl text-white text-sm font-medium animate-in slide-in-from-bottom-5 duration-300 ${
+            className={`pointer-events-auto relative overflow-hidden flex items-center justify-between gap-3 p-4 rounded-2xl shadow-2xl text-white text-sm font-semibold transition-all duration-300 animate-in slide-in-from-bottom-4 fade-in-50 ${
               toast.type === "success"
-                ? "bg-gray-900 border border-gray-800"
+                ? "bg-gray-950/95 border border-white/10 backdrop-blur-md"
                 : toast.type === "error"
-                ? "bg-red-600"
-                : "bg-indigo-600"
+                ? "bg-rose-950/95 border border-rose-500/30 backdrop-blur-md"
+                : "bg-indigo-950/95 border border-indigo-500/30 backdrop-blur-md"
             }`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               {toast.type === "success" && (
-                <CheckCircle2 size={19} className="text-green-400 shrink-0" />
+                <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={17} />
+                </div>
               )}
               {toast.type === "info" && (
-                <Info size={19} className="text-blue-300 shrink-0" />
+                <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                  <Info size={17} />
+                </div>
               )}
               {toast.type === "error" && (
-                <AlertCircle size={19} className="text-red-200 shrink-0" />
+                <div className="w-7 h-7 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                  <AlertCircle size={17} />
+                </div>
               )}
-              <span>{toast.title}</span>
+              <span className="text-xs sm:text-sm font-medium text-gray-100">
+                {toast.title}
+              </span>
             </div>
+
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-gray-400 hover:text-white transition"
+              className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
               aria-label="Close notification"
             >
-              <X size={16} />
+              <X size={15} />
             </button>
+
+            {/* Subtle animated timer countdown bar */}
+            <div
+              className={`absolute bottom-0 left-0 right-0 h-0.5 ${
+                toast.type === "success"
+                  ? "bg-gradient-to-r from-emerald-500 to-orange-500"
+                  : toast.type === "error"
+                  ? "bg-rose-500"
+                  : "bg-indigo-500"
+              }`}
+              style={{
+                animation: "toast-progress 3.6s linear forwards",
+                transformOrigin: "left",
+              }}
+            />
           </div>
         ))}
       </div>

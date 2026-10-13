@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { Search, SlidersHorizontal, X, Flame } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import Navbar from "../components/Navbar";
@@ -7,11 +7,12 @@ import Footer from "../components/Footer";
 import ProductCard from "../components/ProductCard";
 
 import { API_BASE_URL } from "../config/api";
-import type { Product } from "../data/products";
+import { products as fallbackCatalog, type Product } from "../data/products";
 
 function Products() {
   const [searchParams] = useSearchParams();
   const urlCategory = searchParams.get("category");
+  const urlSale = searchParams.get("sale") === "true";
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +21,7 @@ function Products() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState("default");
+  const [saleOnly, setSaleOnly] = useState(urlSale);
   const [mobileFilter, setMobileFilter] = useState(false);
 
   const categories = [
@@ -36,7 +38,10 @@ function Products() {
     if (urlCategory) {
       setCategory(urlCategory);
     }
-  }, [urlCategory]);
+    if (searchParams.get("sale") === "true") {
+      setSaleOnly(true);
+    }
+  }, [urlCategory, searchParams]);
 
   // Fetch products from backend
   useEffect(() => {
@@ -66,8 +71,8 @@ function Products() {
 
         setProducts(formattedProducts);
       } catch (error) {
-        console.error("Products API error:", error);
-        setApiError("Unable to load products. Please try again.");
+        console.warn("Backend API unavailable, using local product catalog:", error);
+        setProducts(fallbackCatalog);
       } finally {
         setLoading(false);
       }
@@ -76,8 +81,20 @@ function Products() {
     fetchProducts();
   }, []);
 
+  const saleProductsCount = useMemo(() => {
+    return products.filter((p) => (Number(p.oldPrice) || 0) > (Number(p.price) || 0)).length;
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const result = products.filter((product) => {
+      const priceNum = Number(product.price) || 0;
+      const oldPriceNum = Number(product.oldPrice) || 0;
+      const isOnSale = oldPriceNum > priceNum && priceNum > 0;
+
+      if (saleOnly && !isOnSale) {
+        return false;
+      }
+
       const matchesSearch = product.name
         .toLowerCase()
         .includes(search.toLowerCase());
@@ -104,7 +121,7 @@ function Products() {
     }
 
     return result;
-  }, [products, search, category, sort]);
+  }, [products, search, category, sort, saleOnly]);
 
   return (
     <div className="min-h-screen bg-white">
@@ -113,16 +130,25 @@ function Products() {
       {/* Page Header */}
       <section className="bg-[#f5f2ed] py-14">
         <div className="max-w-7xl mx-auto px-5 lg:px-8">
-          <p className="text-orange-500 text-sm font-semibold uppercase tracking-widest">
-            Our Collection
-          </p>
+          {saleOnly ? (
+            <div className="inline-flex items-center gap-2 bg-rose-100 text-rose-700 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
+              <Flame size={13} className="fill-rose-600 text-rose-600" />
+              Limited Time Deals & Sales
+            </div>
+          ) : (
+            <p className="text-orange-500 text-sm font-semibold uppercase tracking-widest">
+              Our Collection
+            </p>
+          )}
 
           <h1 className="text-4xl md:text-5xl font-black mt-3">
-            All Products
+            {saleOnly ? "Flash Sale & Special Deals" : "All Products"}
           </h1>
 
           <p className="text-gray-600 mt-3">
-            Discover products made for your lifestyle.
+            {saleOnly
+              ? "Discover handpicked premium items on sale at exclusive discounted rates."
+              : "Discover products made for your lifestyle."}
           </p>
         </div>
       </section>
@@ -174,29 +200,61 @@ function Products() {
         <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-8">
           {/* Sidebar */}
           <aside className={`${mobileFilter ? "block" : "hidden"} md:block`}>
-            <div className="border border-gray-100 rounded-2xl p-5 sticky top-28">
-              <h3 className="font-bold text-lg mb-5">Categories</h3>
+            <div className="border border-gray-100 rounded-2xl p-5 sticky top-28 space-y-6">
+              {/* On Sale Deals Toggle Button */}
+              <button
+                onClick={() => {
+                  setSaleOnly(!saleOnly);
+                  setMobileFilter(false);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                  saleOnly
+                    ? "bg-rose-600 text-white shadow-md"
+                    : "bg-rose-50 text-rose-800 hover:bg-rose-100/80 border border-rose-200"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Flame
+                    size={15}
+                    className={
+                      saleOnly ? "fill-white text-white" : "fill-rose-500 text-rose-500"
+                    }
+                  />
+                  On Sale Deals Only
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                    saleOnly ? "bg-white/20 text-white" : "bg-rose-200 text-rose-900"
+                  }`}
+                >
+                  {saleProductsCount}
+                </span>
+              </button>
 
-              <div className="space-y-4">
-                {categories.map((item) => (
-                  <button
-                    key={item}
-                    onClick={() => {
-                      setCategory(item);
-                      setMobileFilter(false);
-                    }}
-                    className={`block w-full text-left text-sm transition ${
-                      category === item
-                        ? "text-orange-500 font-bold"
-                        : "text-gray-600 hover:text-orange-500"
-                    }`}
-                  >
-                    {item}
-                  </button>
-                ))}
+              <div>
+                <h3 className="font-bold text-lg mb-4">Categories</h3>
+
+                <div className="space-y-3">
+                  {categories.map((item) => (
+                    <button
+                      key={item}
+                      onClick={() => {
+                        setCategory(item);
+                        setMobileFilter(false);
+                      }}
+                      className={`block w-full text-left text-sm transition ${
+                        category === item
+                          ? "text-orange-500 font-bold"
+                          : "text-gray-600 hover:text-orange-500"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="border-t border-gray-100 mt-7 pt-6">
+              <div className="border-t border-gray-100 pt-5">
                 <h3 className="font-bold mb-3">Price Range</h3>
 
                 <p className="text-sm text-gray-500">
@@ -205,7 +263,7 @@ function Products() {
 
                 <button
                   onClick={() => setSort("low-high")}
-                  className="mt-4 text-sm text-orange-500 font-semibold"
+                  className="mt-3 text-sm text-orange-500 font-semibold"
                 >
                   Lowest Price First →
                 </button>
@@ -216,8 +274,9 @@ function Products() {
                   setCategory("All");
                   setSearch("");
                   setSort("default");
+                  setSaleOnly(false);
                 }}
-                className="mt-7 w-full border rounded-xl py-3 text-sm hover:bg-gray-100"
+                className="w-full border rounded-xl py-3 text-sm hover:bg-gray-100 transition"
               >
                 Reset Filters
               </button>
@@ -238,11 +297,20 @@ function Products() {
               )}
             </div>
 
-            {/* Loading */}
+            {/* Loading Skeleton */}
             {loading && (
-              <div className="text-center py-20 bg-gray-50 rounded-2xl">
-                <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-orange-500" />
-                <p className="mt-4 text-gray-500">Loading products...</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <div
+                    key={n}
+                    className="bg-white rounded-3xl p-4 border border-gray-100 shadow-xs overflow-hidden"
+                  >
+                    <div className="aspect-square rounded-2xl bg-gray-200/80 shimmer-effect mb-4" />
+                    <div className="h-4 bg-gray-200 rounded w-1/3 mb-2 shimmer-effect" />
+                    <div className="h-5 bg-gray-200 rounded w-3/4 mb-3 shimmer-effect" />
+                    <div className="h-6 bg-gray-200 rounded w-1/2 shimmer-effect" />
+                  </div>
+                ))}
               </div>
             )}
 

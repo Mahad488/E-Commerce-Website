@@ -68,6 +68,13 @@ function Checkout() {
     address: string;
     mobile: string;
     payment: string;
+    items?: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+      color?: string;
+      image?: string;
+    }>;
   } | null>(null);
 
   useEffect(() => {
@@ -97,6 +104,8 @@ function Checkout() {
         items: items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
+          color: item.selectedColor || null,
+          color_image: item.selectedColorImage || null,
         })),
         address: address.trim(),
         mobile_number: mobileNumber.trim(),
@@ -131,6 +140,13 @@ function Checkout() {
             : paymentMethod === "card"
             ? "Credit / Debit Card"
             : "Mobile Wallet (JazzCash / EasyPaisa)",
+        items: items.map((it) => ({
+          name: it.product.name,
+          quantity: it.quantity,
+          price: it.product.price,
+          color: it.selectedColor || undefined,
+          image: it.selectedColorImage || it.product.image,
+        })),
       });
 
       clearCart();
@@ -200,6 +216,46 @@ function Checkout() {
                 {orderSuccess.mobile}
               </span>
             </div>
+
+            {/* Ordered Items with Colors */}
+            {orderSuccess.items && orderSuccess.items.length > 0 && (
+              <div className="border-t pt-3 space-y-2">
+                <span className="text-gray-500 block text-xs uppercase tracking-wider font-semibold">
+                  Items Ordered
+                </span>
+                <div className="space-y-2">
+                  {orderSuccess.items.map((it, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-gray-100">
+                      <div className="flex items-center gap-2.5">
+                        {it.image && (
+                          <img
+                            src={it.image}
+                            alt={it.name}
+                            className="w-9 h-9 object-cover rounded-lg border bg-gray-50 shrink-0"
+                          />
+                        )}
+                        <div>
+                          <p className="font-bold text-gray-900 line-clamp-1">{it.name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {it.color ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">
+                                Color: {it.color}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">Standard</span>
+                            )}
+                            <span className="text-gray-400">({it.quantity}x)</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="font-bold text-gray-900">
+                        ${(it.price * it.quantity).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-4 justify-center mt-10">
@@ -433,19 +489,24 @@ function Checkout() {
                   <div className="divide-y max-h-72 overflow-y-auto pr-1 mb-5">
                     {items.map((item) => (
                       <div
-                        key={item.product.id}
+                        key={`${item.product.id}-${item.selectedColor || "default"}`}
                         className="py-3 flex gap-3 items-center justify-between"
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={item.product.image}
+                            src={item.selectedColorImage || item.product.image}
                             alt={item.product.name}
-                            className="w-14 h-14 object-cover rounded-xl bg-gray-100 border"
+                            className="w-14 h-14 object-cover rounded-xl bg-gray-100 border shrink-0"
                           />
                           <div>
                             <h4 className="font-semibold text-sm line-clamp-1">
                               {item.product.name}
                             </h4>
+                            {item.selectedColor && (
+                              <p className="text-[11px] font-bold text-orange-600">
+                                Color: {item.selectedColor}
+                              </p>
+                            )}
                             <p className="text-xs text-gray-500">
                               Qty: {item.quantity} × ${item.product.price.toFixed(2)}
                             </p>

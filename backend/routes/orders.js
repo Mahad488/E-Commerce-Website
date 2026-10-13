@@ -34,13 +34,7 @@ router.post("/", verifyToken, async (req, res) => {
   }
 
   const productIds = items.map((item) => item.product_id);
-
-  if (new Set(productIds).size !== productIds.length) {
-    return res.status(400).json({
-      success: false,
-      message: "Each product may only appear once in the order",
-    });
-  }
+  const uniqueProductIds = Array.from(new Set(productIds));
 
   let connection;
   let transactionStarted = false;
@@ -50,16 +44,16 @@ router.post("/", verifyToken, async (req, res) => {
     await connection.beginTransaction();
     transactionStarted = true;
 
-    const placeholders = productIds.map(() => "?").join(", ");
+    const placeholders = uniqueProductIds.map(() => "?").join(", ");
     const [products] = await connection.query(
       `SELECT id, price, stock FROM products WHERE id IN (${placeholders}) FOR UPDATE`,
-      productIds
+      uniqueProductIds
     );
     const productsById = new Map(
       products.map((product) => [Number(product.id), product])
     );
 
-    if (products.length !== productIds.length) {
+    if (products.length !== uniqueProductIds.length) {
       await connection.rollback();
       transactionStarted = false;
       return res.status(400).json({
@@ -93,6 +87,8 @@ router.post("/", verifyToken, async (req, res) => {
         productId: item.product_id,
         quantity: item.quantity,
         price: (priceCents / 100).toFixed(2),
+        color: item.color || null,
+        color_image: item.color_image || null,
       });
     }
 
@@ -117,8 +113,8 @@ router.post("/", verifyToken, async (req, res) => {
 
     for (const item of orderItems) {
       await connection.query(
-        "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)",
-        [orderId, item.productId, item.quantity, item.price]
+        "INSERT INTO order_items (order_id, product_id, quantity, price, color, color_image) VALUES (?, ?, ?, ?, ?, ?)",
+        [orderId, item.productId, item.quantity, item.price, item.color, item.color_image]
       );
       await connection.query(
         "UPDATE products SET stock = stock - ? WHERE id = ?",
@@ -158,6 +154,31 @@ router.get("/my-orders", verifyToken, async (req, res) => {
       [req.user.id]
     );
 
+    // Fetch order items with colors and images for user profile
+    if (orders.length > 0) {
+      const orderIds = orders.map((o) => o.id);
+      const placeholders = orderIds.map(() => "?").join(",");
+      const [items] = await db.query(
+        `SELECT oi.*, p.name as product_name, COALESCE(oi.color_image, p.image) as product_image 
+         FROM order_items oi 
+         LEFT JOIN products p ON oi.product_id = p.id 
+         WHERE oi.order_id IN (${placeholders})`,
+        orderIds
+      );
+
+      const itemsByOrder = new Map();
+      items.forEach((item) => {
+        if (!itemsByOrder.has(item.order_id)) {
+          itemsByOrder.set(item.order_id, []);
+        }
+        itemsByOrder.get(item.order_id).push(item);
+      });
+
+      orders.forEach((order) => {
+        order.items = itemsByOrder.get(order.id) || [];
+      });
+    }
+
     return res.json(orders);
   } catch (error) {
     console.error("Order History Error:", error);
@@ -183,7 +204,7 @@ router.get("/all", verifyAdmin, async (req, res) => {
       const orderIds = orders.map(o => o.id);
       const placeholders = orderIds.map(() => "?").join(",");
       const [items] = await db.query(
-        `SELECT oi.*, p.name as product_name, p.image as product_image 
+        `SELECT oi.*, p.name as product_name, COALESCE(oi.color_image, p.image) as product_image 
          FROM order_items oi 
          LEFT JOIN products p ON oi.product_id = p.id 
          WHERE oi.order_id IN (${placeholders})`,

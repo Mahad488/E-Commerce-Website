@@ -18,6 +18,11 @@ import {
   Calendar,
   DollarSign,
   Package,
+  X,
+  Phone,
+  CreditCard,
+  Globe,
+  Box,
 } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -32,6 +37,17 @@ interface ProfileUser {
   created_at: string;
 }
 
+interface OrderItem {
+  id: number;
+  product_id: number;
+  quantity: number;
+  price: string | number;
+  color?: string;
+  color_image?: string;
+  product_name?: string;
+  product_image?: string;
+}
+
 interface Order {
   id: number;
   total_amount: string | number;
@@ -42,6 +58,7 @@ interface Order {
   country?: string;
   payment_method?: string;
   created_at: string;
+  items?: OrderItem[];
 }
 
 const ORDER_STEPS = ["Pending", "Processing", "Shipped", "Delivered"];
@@ -55,6 +72,7 @@ export default function Account() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<"orders" | "password" | "details">("orders");
@@ -381,6 +399,27 @@ export default function Account() {
                                 {order.status}
                               </span>
                             </div>
+
+                            {/* Color(s) in order header */}
+                            {order.items && order.items.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                                  Color:
+                                </span>
+                                {Array.from(
+                                  new Set(order.items.map((it) => it.color || "Standard"))
+                                ).map((col, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center gap-1 text-[11px] font-black text-orange-800 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
+                                    {col}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
                             <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
                               <Calendar size={13} />
                               Placed on {new Date(order.created_at).toLocaleDateString()}
@@ -392,19 +431,81 @@ export default function Account() {
                               ${Number(order.total_amount).toFixed(2)}
                             </span>
 
-                            {/* Cancel button — strictly for Pending status */}
-                            {order.status === "Pending" && (
+                            <div className="flex flex-wrap items-center justify-end gap-2">
                               <button
-                                onClick={() => handleCancelOrder(order.id)}
-                                disabled={cancellingId === order.id}
-                                className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 px-4 py-1.5 rounded-full transition disabled:opacity-50"
+                                onClick={() => setViewingOrder(order)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-white bg-gray-100 hover:bg-orange-500 border border-gray-200 hover:border-orange-500 px-3.5 py-1.5 rounded-full transition shadow-2xs"
                               >
-                                <XCircle size={14} />
-                                {cancellingId === order.id ? "Cancelling..." : "Cancel Order"}
+                                <Eye size={13} />
+                                View Order
                               </button>
-                            )}
+
+                              {/* Cancel button — strictly for Pending status */}
+                              {order.status === "Pending" && (
+                                <button
+                                  onClick={() => handleCancelOrder(order.id)}
+                                  disabled={cancellingId === order.id}
+                                  className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 px-3 py-1.5 rounded-full transition disabled:opacity-50"
+                                >
+                                  <XCircle size={13} />
+                                  {cancellingId === order.id ? "Cancelling..." : "Cancel"}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Purchased Items with Color & Image Preview */}
+                        {order.items && order.items.length > 0 && (
+                          <div className="bg-gray-50/80 p-4 rounded-2xl border border-gray-100 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                                <ShoppingBag size={14} className="text-orange-500" />
+                                Items in this order ({order.items.length})
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {order.items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="bg-white p-2.5 rounded-xl border border-gray-200/70 flex items-center gap-3 shadow-2xs"
+                                >
+                                  <img
+                                    src={item.color_image || item.product_image || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600"}
+                                    alt={item.product_name || "Product"}
+                                    className="w-12 h-12 object-cover rounded-lg border bg-gray-50 shrink-0"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src =
+                                        "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600";
+                                    }}
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-gray-900 truncate">
+                                      {item.product_name || `Product #${item.product_id}`}
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                      {item.color ? (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-800 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
+                                          Color: <span className="text-orange-600 font-black">{item.color}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-gray-400 italic">Standard</span>
+                                      )}
+                                      <span className="text-[11px] text-gray-500 font-medium">
+                                        Qty: {item.quantity}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] font-black text-gray-900 mt-0.5">
+                                      ${(Number(item.price) * item.quantity).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Order Address info if available */}
                         {order.address && (
@@ -628,6 +729,241 @@ export default function Account() {
           )}
         </main>
       </div>
+
+      {/* VIEW ORDER RECEIPT MODAL */}
+      {viewingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 md:p-8 space-y-6 relative">
+            {/* Header */}
+            <div className="flex justify-between items-start border-b pb-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-2xl font-black text-gray-900">
+                    Order #{viewingOrder.id} Details
+                  </h3>
+                  <span
+                    className={`text-xs uppercase font-bold tracking-wider px-3 py-1 rounded-full border ${
+                      viewingOrder.status === "Pending"
+                        ? "bg-amber-50 text-amber-600 border-amber-200"
+                        : viewingOrder.status === "Processing"
+                        ? "bg-blue-50 text-blue-600 border-blue-200"
+                        : viewingOrder.status === "Shipped"
+                        ? "bg-purple-50 text-purple-600 border-purple-200"
+                        : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                    }`}
+                  >
+                    {viewingOrder.status}
+                  </span>
+                </div>
+
+                {/* Colors badge in modal header */}
+                {viewingOrder.items && viewingOrder.items.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      Color:
+                    </span>
+                    {Array.from(
+                      new Set(viewingOrder.items.map((it) => it.color || "Standard"))
+                    ).map((col, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 text-xs font-black text-orange-800 bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-full"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
+                        {col}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
+                  <Calendar size={14} />
+                  Placed on {new Date(viewingOrder.created_at).toLocaleString()}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setViewingOrder(null)}
+                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition"
+                title="Close Modal"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Delivery Progress Bar */}
+            <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                Delivery Tracker
+              </p>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {ORDER_STEPS.map((step, idx) => {
+                  const isPassed = idx <= getStepIndex(viewingOrder.status);
+                  return (
+                    <div key={step} className="flex flex-col items-center">
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition mb-1.5 ${
+                          isPassed
+                            ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
+                            : "bg-white text-gray-400 border border-gray-200"
+                        }`}
+                      >
+                        {isPassed ? <CheckCircle2 size={18} /> : idx + 1}
+                      </div>
+                      <span className={`text-xs font-bold ${isPassed ? "text-gray-900" : "text-gray-400"}`}>
+                        {step}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Shipping Location & Payment */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-4 rounded-2xl border space-y-2">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                  <MapPin size={15} className="text-orange-500" />
+                  Shipping Address
+                </h4>
+                <p className="text-xs text-gray-800 font-medium">
+                  {viewingOrder.address || "Standard Address"}
+                </p>
+                <p className="text-xs text-gray-500 flex items-center gap-1">
+                  <Globe size={13} className="text-gray-400" />
+                  {viewingOrder.city ? `${viewingOrder.city}, ` : ""}{viewingOrder.country || "Pakistan"}
+                </p>
+                {viewingOrder.mobile_number && (
+                  <p className="text-xs text-gray-600 flex items-center gap-1 pt-1">
+                    <Phone size={13} className="text-gray-400" />
+                    Phone: <span className="font-bold text-gray-800">{viewingOrder.mobile_number}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-2xl border space-y-2">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                  <CreditCard size={15} className="text-orange-500" />
+                  Payment Method
+                </h4>
+                <p className="text-sm font-bold text-gray-900">
+                  {viewingOrder.payment_method === "COD" ? "Cash On Delivery (COD)" : viewingOrder.payment_method || "Cash On Delivery"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Payment Status:{" "}
+                  <span className="font-bold text-emerald-600">
+                    {viewingOrder.status === "Delivered" ? "Paid" : "Pending on Delivery"}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Ordered Products with Selected Color */}
+            <div>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                <ShoppingBag size={15} className="text-orange-500" />
+                Purchased Products ({viewingOrder.items?.length || 0})
+              </h4>
+
+              {!viewingOrder.items || viewingOrder.items.length === 0 ? (
+                <p className="text-xs text-gray-400 py-3 bg-gray-50 rounded-xl text-center">
+                  Item details not available.
+                </p>
+              ) : (
+                <div className="divide-y border rounded-2xl overflow-hidden text-sm">
+                  {viewingOrder.items.map((item) => (
+                    <div key={item.id} className="p-3.5 flex items-center justify-between bg-white hover:bg-gray-50 transition">
+                      <div className="flex items-center gap-3">
+                        {item.color_image || item.product_image ? (
+                          <img
+                            src={item.color_image || item.product_image}
+                            alt={item.product_name}
+                            className="w-14 h-14 object-cover rounded-xl border bg-gray-100 shrink-0"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-14 h-14 bg-gray-100 rounded-xl border flex items-center justify-center shrink-0">
+                            <Box size={22} className="text-gray-400" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-bold text-gray-900 text-xs md:text-sm">
+                            {item.product_name || `Product #${item.product_id}`}
+                            {item.color ? (
+                              <span className="text-orange-600 font-bold ml-1.5">({item.color})</span>
+                            ) : null}
+                          </p>
+                          <div className="mt-1">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-black text-orange-900 bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-lg">
+                              <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                              Color: <span className="text-orange-600 font-black">{item.color || "Standard"}</span>
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Qty: <span className="font-bold text-gray-800">{item.quantity}</span> × ${Number(item.price).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-gray-900 text-sm md:text-base">
+                          ${(Number(item.price) * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Financial Summary */}
+            <div className="bg-gray-50 p-4 rounded-2xl border space-y-2">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Items Subtotal:</span>
+                <span className="font-bold">${Number(viewingOrder.total_amount).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Delivery & Shipping:</span>
+                <span className="font-bold text-emerald-600">Free Delivery</span>
+              </div>
+              <div className="border-t pt-2 flex justify-between items-center">
+                <span className="text-xs font-bold text-gray-900 uppercase">Grand Total Amount:</span>
+                <span className="text-2xl font-black text-orange-500">
+                  ${Number(viewingOrder.total_amount).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="border-t pt-4 flex justify-between items-center">
+              {viewingOrder.status === "Pending" ? (
+                <button
+                  onClick={() => {
+                    const oId = viewingOrder.id;
+                    setViewingOrder(null);
+                    handleCancelOrder(oId);
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-4 py-2 rounded-full transition"
+                >
+                  <XCircle size={14} />
+                  Cancel Order
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <button
+                onClick={() => setViewingOrder(null)}
+                className="bg-black text-white hover:bg-orange-500 px-7 py-2.5 rounded-full text-xs font-bold transition shadow"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

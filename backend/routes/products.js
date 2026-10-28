@@ -1,4 +1,5 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 
 const { db } = require("../config/db");
 const { verifyAdmin } = require("./admin");
@@ -160,6 +161,196 @@ router.get("/:id", async (req, res) => {
       success: false,
       message: "Failed to fetch product",
     });
+  }
+});
+
+/**
+ * Ensure `reviews` table exists in MySQL database
+ */
+async function ensureReviewsTable() {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_id INT NOT NULL,
+        user_id INT NULL,
+        user_name VARCHAR(150) NOT NULL,
+        rating INT NOT NULL,
+        comment TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_product_id (product_id)
+      )
+    `);
+
+    // Check if table is empty, seed initial sample reviews for products 1 & 2
+    const [rows] = await db.query("SELECT id FROM reviews LIMIT 1");
+    if (rows.length === 0) {
+      await db.query(`
+        INSERT INTO reviews (product_id, user_name, rating, comment, created_at) VALUES
+        (1, 'Ahmad Hassan', 5, 'Outstanding build quality and fast shipping! Exceeded my expectations.', NOW() - INTERVAL 2 DAY),
+        (1, 'Sara Khan', 4, 'Very comfortable and durable material. Highly recommended for daily use.', NOW() - INTERVAL 7 DAY),
+        (2, 'Bilal Tariq', 5, 'Perfect fit and super stylish sneakers. Will definitely buy again.', NOW() - INTERVAL 3 DAY),
+        (3, 'Zainab Ali', 5, 'Minimalist luxury watch at a very reasonable price.', NOW() - INTERVAL 5 DAY)
+      `);
+      console.log("Seeded initial product reviews into MySQL database!");
+    }
+  } catch (err) {
+    console.warn("Could not ensure reviews table in DB:", err.message);
+  }
+}
+
+// Auto-run ensureReviewsTable on startup
+ensureReviewsTable();
+
+function formatReviewDate(date) {
+  if (!date) return "Recently";
+  const now = new Date();
+  const d = new Date(date);
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 60) return "Just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} minutes ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hours ago`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} days ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * GET /api/products/:id/reviews
+ * Fetches all reviews for a product along with overall stats
+ */
+router.get("/:id/reviews", async (req, res) => {
+  const productId = Number(req.params.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid product ID" });
+  }
+
+  try {
+    await ensureReviewsTable();
+
+    const [reviews] = await db.query(
+      `SELECT id, product_id, user_id, user_name, rating, comment, created_at 
+       FROM reviews 
+       WHERE product_id = ? 
+       ORDER BY created_at DESC`,
+      [productId]
+    );
+
+    const count = reviews.length;
+    const avgRating = count > 0 
+      ? Number((reviews.reduce((acc, r) => acc + Number(r.rating), 0) / count).toFixed(1))
+      : 0;
+
+    return res.json({
+      success: true,
+      reviews: reviews.map((r) => ({
+        id: r.id,
+        productId: r.product_id,
+        name: r.user_name,
+        rating: Number(r.rating),
+        comment: r.comment,
+        createdAt: r.created_at,
+        date: formatReviewDate(r.created_at),
+      })),
+      totalReviews: count,
+      averageRating: avgRating,
+    });
+  } catch (error) {
+    console.error("Fetch reviews error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch reviews" });
+  }
+});
+
+/**
+ * POST /api/products/:id/reviews
+ * Submits a new customer review & automatically updates product's average rating
+ */
+router.post("/:id/reviews", async (req, res) => {
+  const productId = Number(req.params.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid product ID" });
+  }
+
+  const { name, rating, comment } = req.body || {};
+  if (!comment || typeof comment !== "string" || !comment.trim()) {
+    return res.status(400).json({ success: false, message: "Feedback comment is required" });
+  }
+
+  const numRating = Number(rating);
+  if (!Number.isInteger(numRating) || numRating < 1 || numRating > 5) {
+    return res.status(400).json({ success: false, message: "Rating must be an integer between 1 and 5" });
+  }
+
+  // Check optional auth token for authenticated user
+  let userId = null;
+  let reviewerName = (name && typeof name === "string" ? name.trim() : "").slice(0, 100);
+
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || "nova_jwt_secret_key");
+      if (decoded && decoded.id) {
+        userId = decoded.id;
+        if (!reviewerName) {
+          const [uRows] = await db.query("SELECT name FROM users WHERE id = ?", [userId]);
+          if (uRows.length > 0) {
+            reviewerName = uRows[0].name;
+          }
+        }
+      }
+    } catch {
+      // Token invalid or expired, proceed with fallback
+    }
+  }
+
+  if (!reviewerName) {
+    reviewerName = "Verified Customer";
+  }
+
+  try {
+    await ensureReviewsTable();
+
+    // Verify product exists
+    const [pRows] = await db.query("SELECT id FROM products WHERE id = ?", [productId]);
+    if (pRows.length === 0) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const [insertResult] = await db.query(
+      "INSERT INTO reviews (product_id, user_id, user_name, rating, comment) VALUES (?, ?, ?, ?, ?)",
+      [productId, userId, reviewerName, numRating, comment.trim()]
+    );
+
+    // Calculate new average rating for product
+    const [avgRows] = await db.query(
+      "SELECT COUNT(*) AS total, AVG(rating) AS avgRating FROM reviews WHERE product_id = ?",
+      [productId]
+    );
+
+    const newAvg = avgRows[0].avgRating ? Number(Number(avgRows[0].avgRating).toFixed(1)) : numRating;
+    const totalCount = avgRows[0].total || 1;
+
+    // Update product's rating in products table
+    await db.query("UPDATE products SET rating = ? WHERE id = ?", [newAvg, productId]);
+
+    return res.status(201).json({
+      success: true,
+      message: "Review submitted successfully! ⭐",
+      review: {
+        id: insertResult.insertId,
+        productId,
+        name: reviewerName,
+        rating: numRating,
+        comment: comment.trim(),
+        createdAt: new Date().toISOString(),
+        date: "Just now",
+      },
+      averageRating: newAvg,
+      totalReviews: totalCount,
+    });
+  } catch (error) {
+    console.error("Post review error:", error);
+    return res.status(500).json({ success: false, message: "Failed to submit review" });
   }
 });
 

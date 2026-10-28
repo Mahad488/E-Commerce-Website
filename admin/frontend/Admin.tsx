@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Package,
   DollarSign,
@@ -36,14 +36,15 @@ import {
   Percent,
   Save,
   Palette,
+  ShieldCheck,
+  Lock,
+  EyeOff,
+  Key,
 } from "lucide-react";
 
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
-
-import { API_BASE_URL } from "../config/api";
-import { useToast } from "../context/ToastContext";
-import { products as fallbackProducts, type Product, type ProductColorVariant } from "../data/products";
+import { API_BASE_URL } from "../../src/config/api";
+import { useToast } from "../../src/context/ToastContext";
+import { products as fallbackProducts, type Product, type ProductColorVariant } from "../../src/data/products";
 
 const PRESET_COLORS = [
   { name: "Black", hex: "#111827" },
@@ -57,6 +58,24 @@ const PRESET_COLORS = [
   { name: "Pink", hex: "#ec4899" },
   { name: "Purple", hex: "#9333ea" },
 ];
+
+function getColorHex(colorName?: string): string {
+  if (!colorName) return "#f97316";
+  const lower = colorName.toLowerCase();
+  if (lower.includes("black") || lower.includes("dark") || lower.includes("stealth") || lower.includes("charcoal")) return "#111827";
+  if (lower.includes("white") || lower.includes("clean") || lower.includes("pure")) return "#ffffff";
+  if (lower.includes("red") || lower.includes("crimson")) return "#dc2626";
+  if (lower.includes("blue") || lower.includes("navy") || lower.includes("cobalt")) return "#2563eb";
+  if (lower.includes("green") || lower.includes("electric") || lower.includes("emerald")) return "#16a34a";
+  if (lower.includes("grey") || lower.includes("gray") || lower.includes("heather")) return "#6b7280";
+  if (lower.includes("brown")) return "#78350f";
+  if (lower.includes("beige")) return "#d6c7b2";
+  if (lower.includes("pink")) return "#ec4899";
+  if (lower.includes("purple")) return "#9333ea";
+  if (lower.includes("yellow") || lower.includes("gold")) return "#eab308";
+  if (lower.includes("orange")) return "#ea580c";
+  return "#f97316";
+}
 
 interface OrderItem {
   id: number;
@@ -87,7 +106,18 @@ interface Order {
 export default function Admin() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"orders" | "products" | "add-product">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "products" | "add-product" | "settings">("orders");
+
+  // Security & Password Settings State
+  const [adminUsername, setAdminUsername] = useState("nova_admin");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [isPasswordSaving, setIsPasswordSaving] = useState(false);
+  const [securityMessage, setSecurityMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -482,13 +512,11 @@ export default function Admin() {
       // Fetch all orders
       const oRes = await fetch(`${API_BASE_URL}/api/orders/all`, { headers });
 
-      // If 401 — admin token expired
-      if (oRes.status === 401) {
-        if (token !== "demo_admin_preview_token") {
-          localStorage.removeItem("nova_admin_token");
-          navigate("/admin-login");
-          return;
-        }
+      // If 401 or 403 — admin token invalid or expired
+      if (oRes.status === 401 || oRes.status === 403) {
+        localStorage.removeItem("nova_admin_token");
+        navigate("/admin-login");
+        return;
       }
 
       const oData = await oRes.json();
@@ -508,13 +536,113 @@ export default function Admin() {
     }
   };
 
+  const fetchAdminProfile = async () => {
+    const token = localStorage.getItem("nova_admin_token");
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.username) setAdminUsername(data.username);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecurityMessage(null);
+
+    const cleanCurrent = currentPassword.trim();
+    const cleanNew = newPassword.trim();
+    const cleanConfirm = confirmPassword.trim();
+    const cleanUser = adminUsername.trim();
+
+    if (!cleanCurrent) {
+      setSecurityMessage({ type: "error", text: "Please enter your current password to verify." });
+      return;
+    }
+
+    if (!cleanNew) {
+      setSecurityMessage({ type: "error", text: "Please enter a new password." });
+      return;
+    }
+
+    if (cleanNew.length < 6) {
+      setSecurityMessage({ type: "error", text: "New password must be at least 6 characters long." });
+      return;
+    }
+
+    if (cleanNew !== cleanConfirm) {
+      setSecurityMessage({ type: "error", text: "New password and Confirm Password do not match." });
+      return;
+    }
+
+    const token = localStorage.getItem("nova_admin_token");
+    setIsPasswordSaving(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/change-password`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: cleanCurrent,
+          newPassword: cleanNew,
+          newUsername: cleanUser,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        if (data.token) {
+          localStorage.setItem("nova_admin_token", data.token);
+        }
+        if (data.username) {
+          setAdminUsername(data.username);
+        }
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setSecurityMessage({
+          type: "success",
+          text: "Admin password updated successfully! Use your new password for your next login.",
+        });
+        showToast("Admin credentials updated successfully! 🎉", "success");
+      } else {
+        setSecurityMessage({
+          type: "error",
+          text: data.message || "Failed to update password. Please check your current password.",
+        });
+        showToast(data.message || "Failed to update password", "error");
+      }
+    } catch (err) {
+      console.error("Change password error:", err);
+      setSecurityMessage({
+        type: "error",
+        text: "Could not connect to backend server. Make sure backend is running.",
+      });
+      showToast("Backend connection error", "error");
+    } finally {
+      setIsPasswordSaving(false);
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem("nova_admin_token");
-    if (!token) {
+    if (!token || token === "demo_admin_preview_token") {
+      localStorage.removeItem("nova_admin_token");
       navigate("/admin-login");
       return;
     }
     fetchData();
+    fetchAdminProfile();
   }, []);
 
   const handleUpdateStatus = async (orderId: number, newStatus: string) => {
@@ -606,7 +734,51 @@ export default function Admin() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-between">
       <div>
-        <Navbar />
+        {/* Dedicated Admin Portal Navigation */}
+        <header className="bg-gray-950 border-b border-gray-800 text-white sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <span className="font-black text-lg tracking-tight text-white">NOVA</span>
+                <span className="text-xs text-orange-400 font-bold ml-1.5 uppercase tracking-wider">Admin</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setActiveTab("settings")}
+                className={`text-xs font-semibold transition flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer ${
+                  activeTab === "settings"
+                    ? "bg-orange-500 text-white border-orange-500 shadow-sm shadow-orange-500/30"
+                    : "bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border-white/10"
+                }`}
+              >
+                <Key size={14} className="text-orange-400" />
+                Change Password
+              </button>
+              <Link
+                to="/admin-data"
+                className="text-xs font-semibold text-gray-300 hover:text-white transition flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg border border-white/10"
+              >
+                <Sparkles size={14} className="text-orange-400" />
+                Data Hub
+              </Link>
+              <button
+                onClick={() => {
+                  localStorage.removeItem("nova_admin_token");
+                  navigate("/admin-login");
+                }}
+                className="text-xs font-bold text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition"
+              >
+                <LogOut size={14} />
+                Logout
+              </button>
+            </div>
+          </div>
+        </header>
 
         {/* Header */}
         <section className="bg-gradient-to-r from-gray-900 to-gray-800 text-white py-12">
@@ -723,6 +895,17 @@ export default function Admin() {
             >
               <Plus size={16} />
               Add New Product
+            </button>
+            <button
+              onClick={() => setActiveTab("settings")}
+              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                activeTab === "settings"
+                  ? "border-orange-500 text-orange-500"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              <Key size={16} />
+              Security &amp; Password
             </button>
           </div>
 
@@ -943,11 +1126,18 @@ export default function Admin() {
                                       <p className="text-xs font-bold text-gray-900 truncate">
                                         {it.product_name || `Product #${it.product_id}`}
                                       </p>
-                                      <span className="inline-flex items-center gap-1 text-[11px] font-black bg-orange-50 text-orange-800 border border-orange-200 px-2 py-0.5 rounded-md mt-0.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
-                                        Color: <span className="text-orange-600">{it.color || "Standard"}</span>
-                                        <span className="text-gray-400 font-normal">({it.quantity}x)</span>
-                                      </span>
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black bg-orange-100/90 text-orange-950 border border-orange-300 px-2.5 py-0.5 rounded-md shadow-2xs">
+                                          <span
+                                            className="w-2.5 h-2.5 rounded-full border border-gray-400 shrink-0"
+                                            style={{ backgroundColor: getColorHex(it.color) }}
+                                          />
+                                          Color: <span className="text-orange-700 font-extrabold">{it.color || "Standard"}</span>
+                                        </span>
+                                        <span className="text-[10px] font-bold text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-md">
+                                          Qty: {it.quantity}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
                                 ))}
@@ -1933,6 +2123,168 @@ export default function Admin() {
               </form>
             </div>
           )}
+
+          {/* Tab 4: Admin Security & Password Settings */}
+          {activeTab === "settings" && (
+            <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-gray-200/80 shadow-sm p-6 sm:p-10 space-y-8 animate-fadeIn">
+              <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
+                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 text-orange-600 flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldCheck size={28} />
+                </div>
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                    Admin Security &amp; Credentials
+                  </h2>
+                  <p className="text-gray-500 text-xs sm:text-sm mt-0.5">
+                    Update your admin username and security password. Changes are saved directly to MySQL.
+                  </p>
+                </div>
+              </div>
+
+              {securityMessage && (
+                <div
+                  className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-3 ${
+                    securityMessage.type === "success"
+                      ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                      : "bg-rose-50 border border-rose-200 text-rose-800"
+                  }`}
+                >
+                  {securityMessage.type === "success" ? (
+                    <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle size={18} className="text-rose-600 shrink-0" />
+                  )}
+                  <span>{securityMessage.text}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdatePassword} className="space-y-6">
+                {/* Admin Username Field */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Admin Username
+                  </label>
+                  <div className="relative">
+                    <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={adminUsername}
+                      onChange={(e) => setAdminUsername(e.target.value)}
+                      required
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
+                      placeholder="e.g. nova_admin"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    The username you use when logging into the admin portal.
+                  </p>
+                </div>
+
+                {/* Current Password Field */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Current Password <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type={showCurrentPass ? "text" : "password"}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
+                      placeholder="Enter your current password to authorize changes"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      {showCurrentPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-2">
+                  {/* New Password Field */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                      New Password <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Key size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type={showNewPass ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
+                        placeholder="At least 6 characters"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPass(!showNewPass)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm New Password Field */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                      Confirm New Password <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <CheckCircle2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type={showConfirmPass ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
+                        placeholder="Re-type your new password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPass(!showConfirmPass)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-100">
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-500 shrink-0" />
+                    <span>Encrypted with bcrypt &amp; saved to MySQL database.</span>
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isPasswordSaving}
+                    className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 active:scale-95 disabled:opacity-50 text-white font-bold px-8 py-3.5 rounded-xl transition shadow-lg shadow-orange-500/25 text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isPasswordSaving ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Updating Password...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save size={16} />
+                        <span>Update Admin Password</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </main>
       </div>
 
@@ -2062,10 +2414,13 @@ export default function Admin() {
                               <span className="text-orange-600 font-bold ml-1.5">({item.color})</span>
                             ) : null}
                           </p>
-                          <div className="mt-1">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-black text-orange-900 bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-lg">
-                              <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
-                              Color: <span className="text-orange-600 font-black">{item.color || "Standard"}</span>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-black text-orange-950 bg-orange-100 border border-orange-300 px-3 py-1 rounded-lg shadow-2xs">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border border-gray-400 shrink-0"
+                                style={{ backgroundColor: getColorHex(item.color) }}
+                              />
+                              Color: <span className="text-orange-700 font-extrabold">{item.color || "Standard"}</span>
                             </span>
                           </div>
                           <p className="text-xs text-gray-400 mt-0.5">
@@ -2523,7 +2878,10 @@ export default function Admin() {
         </div>
       )}
 
-      <Footer />
+      {/* Admin Portal Footer */}
+      <footer className="bg-gray-950 border-t border-gray-800 text-gray-500 text-xs py-6 mt-16 text-center">
+        <p>© {new Date().getFullYear()} NOVA Store Admin Portal. Secure Management Console.</p>
+      </footer>
     </div>
   );
 }

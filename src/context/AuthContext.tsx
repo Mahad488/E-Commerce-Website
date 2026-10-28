@@ -11,6 +11,10 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
 }
 
 interface AuthContextType {
@@ -18,6 +22,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   setSession: (user: AuthUser, token: string) => void;
+  updateUser: (updatedFields: Partial<AuthUser>) => void;
   logout: () => void;
 }
 
@@ -52,6 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(newToken);
   }, []);
 
+  const updateUser = useCallback((updatedFields: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updatedFields };
+      localStorage.setItem("nova_user", JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -64,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isAuthenticated: Boolean(user && token),
         setSession,
+        updateUser,
         logout,
       }}
     >

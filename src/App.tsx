@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { CartProvider } from "./context/CartContext";
 import { AuthProvider } from "./context/AuthContext";
@@ -12,12 +12,19 @@ import CategoriesPage from "./pages/CategoriesPage";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import Wishlist from "./pages/Wishlist";
-import Admin from "./pages/Admin";
-import AdminLogin from "./pages/AdminLogin";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Account from "./pages/Account";
 import ScrollToTop from "./components/ScrollToTop";
+import { Admin, AdminLogin, AdminPortalData } from "../admin/frontend";
+
+function ProtectedAdminRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("nova_admin_token");
+  if (!token || token === "demo_admin_preview_token") {
+    return <Navigate to="/admin-login" replace />;
+  }
+  return <>{children}</>;
+}
 
 function App() {
   return (
@@ -35,8 +42,23 @@ function App() {
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/wishlist" element={<Wishlist />} />
-                <Route path="/admin" element={<Admin />} />
                 <Route path="/admin-login" element={<AdminLogin />} />
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedAdminRoute>
+                      <Admin />
+                    </ProtectedAdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin-data"
+                  element={
+                    <ProtectedAdminRoute>
+                      <AdminPortalData />
+                    </ProtectedAdminRoute>
+                  }
+                />
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/account" element={<Account />} />

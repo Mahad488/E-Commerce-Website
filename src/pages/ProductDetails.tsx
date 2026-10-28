@@ -20,6 +20,7 @@ import type { Product, ProductColorVariant } from "../data/products";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 
 const CATEGORY_FALLBACKS: Record<string, string> = {
   Fashion: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=600&q=80",
@@ -48,7 +49,7 @@ function getImageUrl(imagePath?: string, category?: string): string {
 }
 
 interface Review {
-  id: string;
+  id: string | number;
   name: string;
   rating: number;
   date: string;
@@ -76,6 +77,7 @@ function ProductDetails() {
   const { addToCart } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { showToast } = useToast();
+  const { user, token } = useAuth();
   const { id } = useParams();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -89,62 +91,75 @@ function ProductDetails() {
   const [newReviewer, setNewReviewer] = useState("");
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
+  // Auto-fill reviewer name if logged in
   useEffect(() => {
-    if (id) {
-      const savedKey = `nova_reviews_${id}`;
+    if (user?.name && !newReviewer) {
+      setNewReviewer(user.name);
+    }
+  }, [user, newReviewer]);
+
+  // Fetch reviews from backend API
+  const fetchReviews = async (productId: string | number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/products/${productId}/reviews`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.reviews)) {
+        setReviews(data.reviews);
+        return typeof data.averageRating === "number" ? data.averageRating : null;
+      }
+    } catch {
+      // Local fallback
+      const savedKey = `nova_reviews_${productId}`;
       const saved = localStorage.getItem(savedKey);
       if (saved) {
         try {
-          setReviews(JSON.parse(saved));
+          const parsed = JSON.parse(saved);
+          setReviews(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const avg = parsed.reduce((sum: number, r: Review) => sum + r.rating, 0) / parsed.length;
+            return Number(avg.toFixed(1));
+          }
         } catch {
           setReviews([]);
         }
-      } else if (Number(id) <= 2) {
-        // Only original sample demo products (1 & 2) have initial reviews
+      } else if (Number(productId) <= 2) {
         setReviews(INITIAL_REVIEWS);
       } else {
-        // Any newly added product starts with 0 reviews
         setReviews([]);
       }
     }
-  }, [id]);
+    return null;
+  };
 
   useEffect(() => {
-    const fetchProduct = async () => {
+    const fetchProductAndReviews = async () => {
+      if (!id) return;
       try {
         setLoading(true);
         setApiError("");
 
-        const response = await fetch(`${API_BASE_URL}/api/products/${id}`);
-        const data = await response.json();
+        const [productRes, avgRatingFromApi] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/products/${id}`),
+          fetchReviews(id),
+        ]);
 
-        if (!response.ok || !data.product) {
+        const data = await productRes.json();
+        if (!productRes.ok || !data.product) {
           throw new Error(data.message || "Product not found");
         }
 
         const p = data.product;
-        const savedKey = `nova_reviews_${id}`;
-        const saved = localStorage.getItem(savedKey);
-        let finalRating = Number(p.rating) || 0;
-
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const avg = parsed.reduce((sum: number, r: Review) => sum + r.rating, 0) / parsed.length;
-              finalRating = Number(avg.toFixed(1));
-            }
-          } catch {}
-        }
-
         const colorsArr = Array.isArray(p.colors) ? p.colors : [];
+        const calculatedRating = avgRatingFromApi !== null ? avgRatingFromApi : Number(p.rating) || 0;
+
         setProduct({
           ...p,
           id: Number(p.id),
           price: Number(p.price) || 0,
           oldPrice: Number(p.oldPrice) || 0,
-          rating: finalRating,
+          rating: calculatedRating,
           stock: Number(p.stock) || 0,
           colors: colorsArr,
         });
@@ -162,35 +177,66 @@ function ProductDetails() {
       }
     };
 
-    if (id) {
-      fetchProduct();
-    }
+    fetchProductAndReviews();
   }, [id]);
 
-  const handleAddReview = (e: React.FormEvent) => {
+  const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReviewer.trim() || !newComment.trim() || !id) return;
+    if (!newComment.trim() || !id) return;
 
-    const review: Review = {
-      id: Date.now().toString(),
-      name: newReviewer.trim(),
-      rating: newRating,
-      date: "Just now",
-      comment: newComment.trim(),
-    };
+    const reviewerName = newReviewer.trim() || user?.name || "Verified Customer";
+    setIsSubmittingReview(true);
 
-    const updated = [review, ...reviews];
-    setReviews(updated);
-    localStorage.setItem(`nova_reviews_${id}`, JSON.stringify(updated));
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/products/${id}/reviews`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          name: reviewerName,
+          rating: newRating,
+          comment: newComment.trim(),
+        }),
+      });
 
-    // Recalculate average rating
-    const avg = updated.reduce((acc, r) => acc + r.rating, 0) / updated.length;
-    setProduct((prev) => (prev ? { ...prev, rating: Number(avg.toFixed(1)) } : null));
+      const data = await response.json();
 
-    setNewReviewer("");
-    setNewComment("");
-    setNewRating(5);
-    showToast("Review submitted successfully! ⭐", "success");
+      if (response.ok && data.review) {
+        setReviews((prev) => [data.review, ...prev]);
+        if (data.averageRating !== undefined) {
+          setProduct((prev) => (prev ? { ...prev, rating: data.averageRating } : null));
+        }
+        showToast("Review submitted successfully! ⭐", "success");
+        setNewComment("");
+        setNewRating(5);
+        return;
+      }
+      throw new Error(data.message || "Failed to submit review");
+    } catch (err: any) {
+      console.warn("Backend review submission error, saving to local cache:", err);
+      const review: Review = {
+        id: Date.now().toString(),
+        name: reviewerName,
+        rating: newRating,
+        date: "Just now",
+        comment: newComment.trim(),
+      };
+
+      const updated = [review, ...reviews];
+      setReviews(updated);
+      localStorage.setItem(`nova_reviews_${id}`, JSON.stringify(updated));
+
+      const avg = updated.reduce((acc, r) => acc + r.rating, 0) / updated.length;
+      setProduct((prev) => (prev ? { ...prev, rating: Number(avg.toFixed(1)) } : null));
+
+      showToast("Review submitted successfully! ⭐", "success");
+      setNewComment("");
+      setNewRating(5);
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   if (loading) {
@@ -659,9 +705,17 @@ function ProductDetails() {
 
                 <button
                   type="submit"
-                  className="w-full bg-black text-white py-3 rounded-full font-bold text-sm hover:bg-orange-500 transition shadow"
+                  disabled={isSubmittingReview}
+                  className="w-full bg-black text-white py-3 rounded-full font-bold text-sm hover:bg-orange-500 transition shadow disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Submit Review
+                  {isSubmittingReview ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Submitting Review...</span>
+                    </>
+                  ) : (
+                    "Submit Review"
+                  )}
                 </button>
               </form>
             </div>

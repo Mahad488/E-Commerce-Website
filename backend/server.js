@@ -7,7 +7,7 @@ const { testConnection } = require("./config/db");
 const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
-const { adminRouter } = require("./routes/admin");
+const { adminRouter } = require("./admin");
 
 const path = require("path");
 

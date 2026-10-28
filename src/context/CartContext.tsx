@@ -195,7 +195,26 @@ export function CartProvider({ children }: CartProviderProps) {
   }, [state.items]);
 
   const addToCart = (product: Product, selectedColor?: string, selectedColorImage?: string) => {
-    dispatch({ type: "ADD_TO_CART", product, selectedColor, selectedColorImage });
+    let resolvedColor = selectedColor?.trim();
+    let resolvedColorImage = selectedColorImage?.trim();
+
+    if (!resolvedColor && product.colors && product.colors.length > 0) {
+      resolvedColor = product.colors[0].name;
+      if (!resolvedColorImage && product.colors[0].image) {
+        resolvedColorImage = product.colors[0].image;
+      }
+    }
+
+    if (!resolvedColor) {
+      resolvedColor = "Standard";
+    }
+
+    dispatch({
+      type: "ADD_TO_CART",
+      product,
+      selectedColor: resolvedColor,
+      selectedColorImage: resolvedColorImage || product.image,
+    });
   };
 
   const removeFromCart = (productId: number, selectedColor?: string) => {

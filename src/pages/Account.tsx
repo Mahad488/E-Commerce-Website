@@ -4,6 +4,7 @@ import {
   LogOut,
   ShoppingBag,
   UserRound,
+  User,
   PackageCheck,
   CheckCircle2,
   XCircle,
@@ -23,9 +24,11 @@ import {
   CreditCard,
   Globe,
   Box,
+  Printer,
 } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import OrderInvoiceModal from "../components/OrderInvoiceModal";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { API_BASE_URL } from "../config/api";
@@ -34,6 +37,10 @@ interface ProfileUser {
   id: number;
   name: string;
   email: string;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
   created_at: string;
 }
 
@@ -57,14 +64,39 @@ interface Order {
   city?: string;
   country?: string;
   payment_method?: string;
+  payment_status?: string;
+  transaction_id?: string;
   created_at: string;
   items?: OrderItem[];
 }
 
 const ORDER_STEPS = ["Pending", "Processing", "Shipped", "Delivered"];
 
+const PROFILE_COUNTRIES = [
+  "Pakistan",
+  "United States",
+  "United Kingdom",
+  "Canada",
+  "Australia",
+  "United Arab Emirates",
+  "Saudi Arabia",
+  "Turkey",
+  "Germany",
+  "France",
+  "Italy",
+  "Spain",
+  "China",
+  "India",
+  "Japan",
+  "Malaysia",
+  "Singapore",
+  "Qatar",
+  "Kuwait",
+  "Other",
+];
+
 export default function Account() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, updateUser } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -73,9 +105,18 @@ export default function Account() {
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
+  const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<"orders" | "password" | "details">("orders");
+
+  // Edit Profile / Address Book State
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editCountry, setEditCountry] = useState("Pakistan");
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // Change Password State
   const [currentPassword, setCurrentPassword] = useState("");
@@ -170,6 +211,66 @@ export default function Account() {
       showToast("Network error. Please try again.", "error");
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  useEffect(() => {
+    const active = profile || user;
+    if (active) {
+      setEditName(active.name || "");
+      setEditPhone(active.phone || "");
+      setEditAddress(active.address || "");
+      setEditCity(active.city || "");
+      setEditCountry(active.country || "Pakistan");
+    }
+  }, [profile, user]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim()) {
+      showToast("Full name is required", "error");
+      return;
+    }
+
+    setProfileSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: editName.trim(),
+          phone: editPhone.trim(),
+          address: editAddress.trim(),
+          city: editCity.trim(),
+          country: editCountry.trim() || "Pakistan",
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.user) {
+        setProfile(data.user);
+        updateUser(data.user);
+        showToast("Profile & default address updated! 🎉", "success");
+      } else {
+        showToast(data.message || "Failed to update profile", "error");
+      }
+    } catch {
+      // Local fallback for offline/demo sessions
+      const updatedLocal = {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        address: editAddress.trim(),
+        city: editCity.trim(),
+        country: editCountry.trim() || "Pakistan",
+      };
+      setProfile((prev) => (prev ? { ...prev, ...updatedLocal } : null));
+      updateUser(updatedLocal);
+      showToast("Profile updated locally! ✓", "success");
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -383,7 +484,7 @@ export default function Account() {
                       >
                         <div className="flex justify-between items-start border-b pb-4 gap-4">
                           <div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-black text-gray-900 text-lg">Order #{order.id}</span>
                               <span
                                 className={`text-[11px] font-bold px-3 py-0.5 rounded-full border uppercase tracking-wider ${
@@ -398,6 +499,15 @@ export default function Account() {
                               >
                                 {order.status}
                               </span>
+                              {order.payment_status === "Paid" ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                  <CheckCircle2 size={12} className="text-emerald-500" /> Paid Online
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                                  {order.payment_method?.includes("COD") ? "COD (Unpaid)" : "Payment Pending"}
+                                </span>
+                              )}
                             </div>
 
                             {/* Color(s) in order header */}
@@ -432,6 +542,15 @@ export default function Account() {
                             </span>
 
                             <div className="flex flex-wrap items-center justify-end gap-2">
+                              <button
+                                onClick={() => setSelectedInvoiceOrder(order)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-gray-700 hover:text-white bg-gray-100 hover:bg-black border border-gray-200 px-3.5 py-1.5 rounded-full transition shadow-2xs"
+                                title="Print or view invoice"
+                              >
+                                <Printer size={13} />
+                                Invoice
+                              </button>
+
                               <button
                                 onClick={() => setViewingOrder(order)}
                                 className="flex items-center gap-1.5 text-xs font-bold text-gray-800 hover:text-white bg-gray-100 hover:bg-orange-500 border border-gray-200 hover:border-orange-500 px-3.5 py-1.5 rounded-full transition shadow-2xs"
@@ -688,43 +807,170 @@ export default function Account() {
             </div>
           )}
 
-          {/* TAB 3: PERSONAL PROFILE DETAILS */}
+          {/* TAB 3: PERSONAL PROFILE & ADDRESS BOOK */}
           {activeTab === "details" && (
-            <div className="bg-white rounded-3xl border shadow-sm p-6 md:p-8 max-w-xl mx-auto space-y-6">
-              <div className="flex items-center gap-3 border-b pb-4">
-                <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl">
-                  <UserRound size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Personal Information</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">Your registered account information</p>
-                </div>
-              </div>
-
-              <div className="space-y-4 text-sm">
-                <div className="bg-gray-50 p-4 rounded-2xl border">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Full Name</p>
-                  <p className="text-base font-bold text-gray-900 mt-1">{currentUser?.name}</p>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-2xl border">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Email Address</p>
-                  <p className="text-base font-bold text-gray-900 mt-1">{currentUser?.email}</p>
+            <div className="bg-white rounded-3xl border shadow-sm p-6 md:p-8 max-w-2xl mx-auto space-y-6">
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl">
+                    <UserRound size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Personal Profile & Address Book</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">Manage your details & default delivery location</p>
+                  </div>
                 </div>
 
                 {profile?.created_at && (
-                  <div className="bg-gray-50 p-4 rounded-2xl border">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Member Since</p>
-                    <p className="text-base font-bold text-gray-900 mt-1">
-                      {new Date(profile.created_at).toLocaleDateString(undefined, {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
+                  <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full font-medium">
+                    <Calendar size={13} className="text-gray-400" />
+                    Member since {new Date(profile.created_at).toLocaleDateString(undefined, { month: "short", year: "numeric" })}
+                  </span>
                 )}
               </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                {/* 1. Account Details */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <User size={15} className="text-blue-500" />
+                    Account Information
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="Your full name"
+                        required
+                        className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 bg-gray-50/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        Email Address <span className="text-gray-400 text-[10px] lowercase">(login email)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="email"
+                          value={currentUser?.email || ""}
+                          disabled
+                          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-gray-100 text-gray-500 cursor-not-allowed pr-10"
+                        />
+                        <Lock size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Default Shipping Address */}
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <MapPin size={15} className="text-orange-500" />
+                      Default Shipping Address
+                    </h3>
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      Auto-fills Checkout
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        Contact Mobile Number
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="tel"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          placeholder="e.g. +92 300 1234567"
+                          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 bg-gray-50/50"
+                        />
+                        <Phone size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        City
+                      </label>
+                      <input
+                        type="text"
+                        value={editCity}
+                        onChange={(e) => setEditCity(e.target.value)}
+                        placeholder="e.g. Lahore, Karachi, Islamabad"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 bg-gray-50/50"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        Street Address / Apartment / Suite
+                      </label>
+                      <input
+                        type="text"
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        placeholder="e.g. House # 12, Street 4, Block C, Gulberg"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 bg-gray-50/50"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                        Country
+                      </label>
+                      <select
+                        value={editCountry}
+                        onChange={(e) => setEditCountry(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 bg-gray-50/50"
+                      >
+                        {PROFILE_COUNTRIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Helpful Checkout Hint Banner */}
+                <div className="bg-orange-50/70 border border-orange-200/80 p-4 rounded-2xl flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-orange-950">Fast 1-Click Checkout Enabled</h4>
+                    <p className="text-xs text-orange-800/80 mt-0.5 leading-relaxed">
+                      Whenever you buy products, these details will automatically pre-fill your checkout form so you won't have to re-enter them every time.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="w-full bg-black text-white font-bold py-4 rounded-full text-sm hover:bg-orange-500 transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {profileSaving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Saving Profile Changes...</span>
+                    </>
+                  ) : (
+                    "Save Profile & Address"
+                  )}
+                </button>
+              </form>
             </div>
           )}
         </main>
@@ -841,20 +1087,36 @@ export default function Account() {
                 )}
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-2xl border space-y-2">
+              <div className="bg-gray-50 p-4 rounded-2xl border space-y-2.5">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
                   <CreditCard size={15} className="text-orange-500" />
-                  Payment Method
+                  Payment Details
                 </h4>
                 <p className="text-sm font-bold text-gray-900">
                   {viewingOrder.payment_method === "COD" ? "Cash On Delivery (COD)" : viewingOrder.payment_method || "Cash On Delivery"}
                 </p>
-                <p className="text-xs text-gray-500">
-                  Payment Status:{" "}
-                  <span className="font-bold text-emerald-600">
-                    {viewingOrder.status === "Delivered" ? "Paid" : "Pending on Delivery"}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Status:</span>
+                  <span
+                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                      viewingOrder.payment_status === "Paid" || viewingOrder.status === "Delivered"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}
+                  >
+                    {viewingOrder.payment_status === "Paid" || viewingOrder.status === "Delivered"
+                      ? "Paid Online"
+                      : "Pending on Delivery"}
                   </span>
-                </p>
+                </div>
+                {viewingOrder.transaction_id && (
+                  <div className="text-xs text-gray-500 pt-1.5 border-t border-gray-200/60 flex items-center justify-between">
+                    <span>Transaction ID:</span>
+                    <span className="font-mono text-[11px] font-bold text-gray-800 bg-white px-2 py-0.5 rounded border border-gray-200 select-all">
+                      {viewingOrder.transaction_id}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -954,15 +1216,54 @@ export default function Account() {
                 <div />
               )}
 
-              <button
-                onClick={() => setViewingOrder(null)}
-                className="bg-black text-white hover:bg-orange-500 px-7 py-2.5 rounded-full text-xs font-bold transition shadow"
-              >
-                Close View
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedInvoiceOrder(viewingOrder)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-white bg-orange-50 hover:bg-orange-500 border border-orange-200 hover:border-orange-500 px-4 py-2 rounded-full transition shadow-xs cursor-pointer"
+                >
+                  <Printer size={14} />
+                  Print Invoice
+                </button>
+                <button
+                  onClick={() => setViewingOrder(null)}
+                  className="bg-black text-white hover:bg-orange-500 px-7 py-2.5 rounded-full text-xs font-bold transition shadow cursor-pointer"
+                >
+                  Close View
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* PRINTABLE INVOICE MODAL */}
+      {selectedInvoiceOrder && (
+        <OrderInvoiceModal
+          order={{
+            id: selectedInvoiceOrder.id,
+            created_at: selectedInvoiceOrder.created_at,
+            total_amount: selectedInvoiceOrder.total_amount,
+            status: selectedInvoiceOrder.status,
+            address: selectedInvoiceOrder.address || profile?.address || undefined,
+            mobile_number: selectedInvoiceOrder.mobile_number || profile?.phone || undefined,
+            city: selectedInvoiceOrder.city || profile?.city || undefined,
+            country: selectedInvoiceOrder.country || profile?.country || undefined,
+            payment_method: selectedInvoiceOrder.payment_method,
+            payment_status: selectedInvoiceOrder.payment_status,
+            transaction_id: selectedInvoiceOrder.transaction_id,
+            customer_name: profile?.name || currentUser?.name,
+            customer_email: profile?.email || currentUser?.email,
+            items: selectedInvoiceOrder.items?.map((it) => ({
+              id: it.id,
+              product_name: it.product_name,
+              quantity: it.quantity,
+              price: it.price,
+              color: it.color,
+              product_image: it.color_image || it.product_image,
+            })),
+          }}
+          onClose={() => setSelectedInvoiceOrder(null)}
+        />
       )}
 
       <Footer />

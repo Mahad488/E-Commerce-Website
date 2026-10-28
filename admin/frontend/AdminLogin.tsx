@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, Eye, EyeOff, Lock, User, ArrowLeft, Sparkles, Key } from "lucide-react";
-import { API_BASE_URL } from "../config/api";
+import { ShieldCheck, Eye, EyeOff, Lock, User, ArrowLeft, Key } from "lucide-react";
+import { API_BASE_URL } from "../../src/config/api";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -11,13 +11,30 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // If already authenticated with a valid token, redirect to admin
+  useEffect(() => {
+    const token = localStorage.getItem("nova_admin_token");
+    if (token && token !== "demo_admin_preview_token") {
+      navigate("/admin", { replace: true });
+    } else {
+      // Clear any invalid or demo tokens
+      localStorage.removeItem("nova_admin_token");
+    }
+  }, [navigate]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     const cleanUser = username.trim();
     const cleanPass = password.trim();
+
+    if (!cleanUser || !cleanPass) {
+      setError("Please enter both username and password.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       let res;
@@ -28,10 +45,10 @@ export default function AdminLogin() {
           body: JSON.stringify({ username: cleanUser, password: cleanPass }),
         });
       } catch {
-        // Fallback to 127.0.0.1 in case of localhost resolution issues
+        // Fallback to localhost:5000 or 127.0.0.1:5000 in case of port/host differences
         const altUrl = API_BASE_URL.includes("localhost")
           ? API_BASE_URL.replace("localhost", "127.0.0.1")
-          : "http://127.0.0.1:5000";
+          : "http://localhost:5000";
         res = await fetch(`${altUrl}/api/admin/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -41,31 +58,17 @@ export default function AdminLogin() {
 
       const data = await res.json();
 
-      if (res.ok && data.token) {
+      if (res.ok && data.success && data.token) {
         localStorage.setItem("nova_admin_token", data.token);
-        navigate("/admin");
+        navigate("/admin", { replace: true });
         return;
       }
 
-      // If credentials match standard admin credentials, grant access directly
-      if (cleanUser === "nova_admin" && cleanPass === "Nova@Admin#2024") {
-        localStorage.setItem("nova_admin_token", "demo_admin_preview_token");
-        navigate("/admin");
-        return;
-      }
-
-      setError(data.message || "Invalid admin credentials");
-    } catch {
-      // Direct access bypass if credentials match
-      if (cleanUser === "nova_admin" && cleanPass === "Nova@Admin#2024") {
-        localStorage.setItem("nova_admin_token", "demo_admin_preview_token");
-        navigate("/admin");
-        return;
-      }
-
-      setError(
-        "Backend server is offline or unreachable. You can click 'Demo Access' below to enter the dashboard immediately."
-      );
+      // If credentials were wrong, show exact error and DO NOT log in
+      setError(data.message || "Invalid username or password. Access denied.");
+    } catch (err) {
+      console.error("Admin login network error:", err);
+      setError("Backend server is not running or unreachable on port 5000. Please start the backend server.");
     } finally {
       setLoading(false);
     }
@@ -75,11 +78,6 @@ export default function AdminLogin() {
     setUsername("nova_admin");
     setPassword("Nova@Admin#2024");
     setError("");
-  };
-
-  const handleDemoAccess = () => {
-    localStorage.setItem("nova_admin_token", "demo_admin_preview_token");
-    navigate("/admin");
   };
 
   return (
@@ -116,8 +114,9 @@ export default function AdminLogin() {
           <form onSubmit={handleLogin} className="space-y-5">
             {/* Error Message */}
             {error && (
-              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs px-4 py-3 rounded-xl leading-relaxed">
-                {error}
+              <div className="bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs px-4 py-3 rounded-xl leading-relaxed flex items-center gap-2">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>{error}</span>
               </div>
             )}
 
@@ -159,7 +158,7 @@ export default function AdminLogin() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition cursor-pointer"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -170,35 +169,33 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-orange-500 hover:bg-orange-600 active:scale-95 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-orange-500/30 text-sm mt-2 cursor-pointer"
+              className="w-full bg-orange-500 hover:bg-orange-600 active:scale-95 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-orange-500/30 text-sm mt-2 cursor-pointer flex items-center justify-center gap-2"
             >
-              {loading ? "Verifying Credentials..." : "Access Admin Dashboard →"}
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <span>Access Admin Dashboard →</span>
+              )}
             </button>
 
-            {/* Quick Actions / Helpers */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
+            {/* Auto-fill Helper */}
+            <div className="pt-2 border-t border-white/10 flex justify-center">
               <button
                 type="button"
                 onClick={handleAutoFill}
-                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-white/5"
+                className="py-2 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-white/5 cursor-pointer"
               >
                 <Key size={13} className="text-orange-400" />
-                <span>Auto-Fill</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDemoAccess}
-                className="py-2.5 px-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-orange-500/20"
-              >
-                <Sparkles size={13} className="text-orange-400" />
-                <span>Demo Access</span>
+                <span>Fill Default Credentials</span>
               </button>
             </div>
           </form>
 
           <p className="text-center text-gray-600 text-xs mt-6">
-            Authorized personnel only. Unauthorized access is monitored.
+            Authorized personnel only. Credentials are strictly verified.
           </p>
         </div>
       </div>

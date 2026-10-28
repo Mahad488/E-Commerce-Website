@@ -4,10 +4,31 @@ const { db } = require("../config/db");
 const verifyToken = require("../middleware/authMiddleware");
 const { verifyAdmin } = require("./admin");
 
-const router = express.Router();
+/**
+ * Ensure `orders` table has payment_status and transaction_id columns
+ */
+async function ensureOrdersColumns() {
+  try {
+    const cols = [
+      { name: "payment_status", type: "VARCHAR(50) DEFAULT 'Pending'" },
+      { name: "transaction_id", type: "VARCHAR(100) NULL" },
+    ];
+    for (const c of cols) {
+      try {
+        await db.query(`ALTER TABLE orders ADD COLUMN ${c.name} ${c.type}`);
+      } catch (err) {
+        // column may already exist, ignore
+      }
+    }
+  } catch (e) {
+    console.warn("Could not ensure orders table columns:", e.message);
+  }
+}
+ensureOrdersColumns();
 
 router.post("/", verifyToken, async (req, res) => {
-  const { items, address, mobile_number, city, country, payment_method } = req.body || {};
+  await ensureOrdersColumns();
+  const { items, address, mobile_number, city, country, payment_method, payment_details } = req.body || {};
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({
@@ -46,7 +67,7 @@ router.post("/", verifyToken, async (req, res) => {
 
     const placeholders = uniqueProductIds.map(() => "?").join(", ");
     const [products] = await connection.query(
-      `SELECT id, price, stock FROM products WHERE id IN (${placeholders}) FOR UPDATE`,
+      `SELECT id, name, price, stock, colors, image FROM products WHERE id IN (${placeholders}) FOR UPDATE`,
       uniqueProductIds
     );
     const productsById = new Map(
@@ -82,13 +103,36 @@ router.post("/", verifyToken, async (req, res) => {
         });
       }
 
+      // Ensure color is always resolved for every ordered item
+      let itemColor = item.color || item.selectedColor;
+      let itemColorImage = item.color_image || item.selectedColorImage;
+
+      if (!itemColor && product.colors) {
+        try {
+          const parsedColors =
+            typeof product.colors === "string" ? JSON.parse(product.colors) : product.colors;
+          if (Array.isArray(parsedColors) && parsedColors.length > 0 && parsedColors[0].name) {
+            itemColor = parsedColors[0].name;
+            if (!itemColorImage && parsedColors[0].image) {
+              itemColorImage = parsedColors[0].image;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!itemColor) {
+        itemColor = "Standard";
+      }
+
       totalCents += priceCents * item.quantity;
       orderItems.push({
         productId: item.product_id,
         quantity: item.quantity,
         price: (priceCents / 100).toFixed(2),
-        color: item.color || null,
-        color_image: item.color_image || null,
+        color: itemColor,
+        color_image: itemColorImage || product.image || null,
       });
     }
 
@@ -96,17 +140,36 @@ router.post("/", verifyToken, async (req, res) => {
       throw new Error("Calculated order total is outside the supported range");
     }
 
+    const isOnlinePayment = payment_method === "card" || payment_method === "wallet";
+    const paymentStatus = isOnlinePayment ? "Paid" : "Pending";
+    const orderStatus = isOnlinePayment ? "Processing" : "Pending";
+
+    let resolvedMethod = "Cash on Delivery (COD)";
+    if (payment_method === "card") {
+      resolvedMethod = `Credit/Debit Card (${payment_details?.cardBrand || "Card"})`;
+    } else if (payment_method === "wallet") {
+      resolvedMethod = `Mobile Wallet (${payment_details?.walletProvider || "JazzCash / EasyPaisa"})`;
+    } else if (payment_method && typeof payment_method === "string") {
+      resolvedMethod = payment_method;
+    }
+
+    const transactionId = isOnlinePayment
+      ? (payment_details?.transactionId || `TXN-${payment_method === "card" ? "CARD" : "WLT"}-${Date.now().toString().slice(-7)}`)
+      : `COD-${Date.now().toString().slice(-6)}`;
+
     const [orderResult] = await connection.query(
-      "INSERT INTO orders (user_id, total_amount, status, address, mobile_number, city, country, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO orders (user_id, total_amount, status, address, mobile_number, city, country, payment_method, payment_status, transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         req.user.id,
         (totalCents / 100).toFixed(2),
-        "Pending",
+        orderStatus,
         address || null,
         mobile_number || null,
         city || null,
         country || null,
-        payment_method || "COD",
+        resolvedMethod,
+        paymentStatus,
+        transactionId,
       ]
     );
     const orderId = orderResult.insertId;
@@ -130,6 +193,10 @@ router.post("/", verifyToken, async (req, res) => {
       message: "Order placed successfully",
       orderId,
       total_amount: (totalCents / 100).toFixed(2),
+      status: orderStatus,
+      payment_status: paymentStatus,
+      payment_method: resolvedMethod,
+      transaction_id: transactionId,
     });
   } catch (error) {
     if (connection && transactionStarted) {
@@ -204,7 +271,7 @@ router.get("/all", verifyAdmin, async (req, res) => {
       const orderIds = orders.map(o => o.id);
       const placeholders = orderIds.map(() => "?").join(",");
       const [items] = await db.query(
-        `SELECT oi.*, p.name as product_name, COALESCE(oi.color_image, p.image) as product_image 
+        `SELECT oi.*, p.name as product_name, p.colors as product_colors, COALESCE(oi.color_image, p.image) as product_image 
          FROM order_items oi 
          LEFT JOIN products p ON oi.product_id = p.id 
          WHERE oi.order_id IN (${placeholders})`,
@@ -212,14 +279,33 @@ router.get("/all", verifyAdmin, async (req, res) => {
       );
 
       const itemsByOrder = new Map();
-      items.forEach(item => {
+      items.forEach((item) => {
+        if (!item.color) {
+          if (item.product_colors) {
+            try {
+              const parsed =
+                typeof item.product_colors === "string"
+                  ? JSON.parse(item.product_colors)
+                  : item.product_colors;
+              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].name) {
+                item.color = parsed[0].name;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (!item.color) {
+            item.color = "Standard";
+          }
+        }
+
         if (!itemsByOrder.has(item.order_id)) {
           itemsByOrder.set(item.order_id, []);
         }
         itemsByOrder.get(item.order_id).push(item);
       });
 
-      orders.forEach(order => {
+      orders.forEach((order) => {
         order.items = itemsByOrder.get(order.id) || [];
       });
     }

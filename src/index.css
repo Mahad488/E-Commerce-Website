@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Tailwind v4 made the default border colour `currentColor` (v3 used gray-200).
+   The components here were written for the v3 default, so restore it. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -282,6 +294,68 @@ img {
   to {
     transform: scaleX(0);
   }
+}
+
+/* Generic entrance animations (modals, drawers, tab switches) */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.15) both;
+}
+
+/* Countdown digit flip */
+@keyframes tick {
+  0% {
+    transform: translateY(-6px);
+    opacity: 0.4;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-tick {
+  animation: tick 0.35s ease-out;
+}
+
+/* Soft pulse for the "current step" on order tracking */
+@keyframes pulse-soft {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
 }
 
 /* Reduced Motion Mode (Full Accessibility Compliance) */

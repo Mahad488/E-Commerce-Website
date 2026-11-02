@@ -1,48 +1,57 @@
 const jwt = require("jsonwebtoken");
+const { getUserSecret } = require("../config/secrets");
 
-function verifyToken(req, res, next) {
+function readBearer(req) {
   const authorization = req.headers.authorization;
-  const [scheme, token] =
-    typeof authorization === "string" ? authorization.split(" ") : [];
+  const [scheme, token] = typeof authorization === "string" ? authorization.split(" ") : [];
+  return scheme === "Bearer" && token ? token : null;
+}
 
-  if (scheme !== "Bearer" || !token) {
-    return res.status(401).json({
-      success: false,
-      message: "Authentication token is required",
-    });
+function decodeUser(token) {
+  const payload = jwt.verify(token, getUserSecret());
+  if (typeof payload !== "object" || payload === null || !Number.isSafeInteger(payload.id) || payload.id <= 0) {
+    return null;
   }
+  return { id: payload.id };
+}
 
-  if (!process.env.JWT_SECRET) {
-    console.error("JWT_SECRET is not configured");
-    return res.status(500).json({
-      success: false,
-      message: "Authentication is not configured",
-    });
+/**
+ * Requires a valid customer JWT and sets req.user = { id }.
+ */
+function verifyToken(req, res, next) {
+  const token = readBearer(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: "Authentication token is required" });
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-
-    if (
-      typeof payload !== "object" ||
-      payload === null ||
-      !Number.isSafeInteger(payload.id) ||
-      payload.id <= 0
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid authentication token",
-      });
+    const user = decodeUser(token);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid authentication token" });
     }
-
-    req.user = { id: payload.id };
+    req.user = user;
     return next();
   } catch {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired authentication token",
-    });
+    return res.status(401).json({ success: false, message: "Invalid or expired authentication token" });
   }
 }
 
+/**
+ * Like verifyToken, but lets anonymous requests through (req.user stays undefined).
+ */
+function optionalToken(req, res, next) {
+  const token = readBearer(req);
+  if (token) {
+    try {
+      const user = decodeUser(token);
+      if (user) req.user = user;
+    } catch {
+      // ignore invalid tokens on optional routes
+    }
+  }
+  return next();
+}
+
 module.exports = verifyToken;
+module.exports.verifyToken = verifyToken;
+module.exports.optionalToken = optionalToken;

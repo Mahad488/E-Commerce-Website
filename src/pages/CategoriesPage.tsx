@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Shirt,
@@ -16,8 +16,9 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ProductCard from "../components/ProductCard";
 
-import { API_BASE_URL } from "../config/api";
 import type { Product } from "../data/products";
+import { fetchCatalog } from "../lib/catalog";
+import { useCurrency } from "../context/CurrencyContext";
 
 const CATEGORY_LIST = [
   {
@@ -27,7 +28,6 @@ const CATEGORY_LIST = [
     badge: "Popular",
     badgeBg: "bg-pink-500",
     description: "Discover stylish casual jackets, t-shirts, sneakers, and modern clothing.",
-    itemCount: "20+ Products",
   },
   {
     name: "Electronics",
@@ -36,7 +36,6 @@ const CATEGORY_LIST = [
     badge: "Best Seller",
     badgeBg: "bg-blue-500",
     description: "High-fidelity headphones, smartwatches, keyboards & wireless devices.",
-    itemCount: "15+ Products",
   },
   {
     name: "Accessories",
@@ -45,7 +44,6 @@ const CATEGORY_LIST = [
     badge: "Trending",
     badgeBg: "bg-amber-500",
     description: "Minimal wristwatches, classic sunglasses, and genuine leather items.",
-    itemCount: "18+ Products",
   },
   {
     name: "Lifestyle",
@@ -54,7 +52,6 @@ const CATEGORY_LIST = [
     badge: "New",
     badgeBg: "bg-emerald-500",
     description: "Premium backpacks, travel accessories, mugs, and daily essentials.",
-    itemCount: "12+ Products",
   },
   {
     name: "Footwear",
@@ -63,7 +60,6 @@ const CATEGORY_LIST = [
     badge: "Hot Deals",
     badgeBg: "bg-purple-500",
     description: "Lightweight running sneakers, casual shoes, and active footwear.",
-    itemCount: "10+ Products",
   },
   {
     name: "Gaming & Tech",
@@ -72,41 +68,40 @@ const CATEGORY_LIST = [
     badge: "Featured",
     badgeBg: "bg-indigo-500",
     description: "RGB mechanical keyboards, fitness bands, and high-performance gear.",
-    itemCount: "8+ Products",
   },
 ];
 
 function CategoriesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const { formatPrice } = useCurrency();
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(`${API_BASE_URL}/api/products`);
-        const data = await res.json();
-
-        if (res.ok && Array.isArray(data.products)) {
-          const formatted = data.products.map((p: any) => ({
-            ...p,
-            id: Number(p.id),
-            price: Number(p.price) || 0,
-            oldPrice: Number(p.oldPrice) || 0,
-            rating: Number(p.rating) || 0,
-            stock: Number(p.stock) || 0,
-          }));
-          setProducts(formatted);
-        }
-      } catch (err) {
-        console.error("Failed to load products for categories page:", err);
-      } finally {
-        setLoading(false);
-      }
+    let active = true;
+    fetchCatalog().then(({ products: list }) => {
+      if (!active) return;
+      setProducts(list);
+      setLoading(false);
+    });
+    return () => {
+      active = false;
     };
-
-    fetchProducts();
   }, []);
+
+  const stats = useMemo(() => {
+    const map: Record<string, { count: number; minPrice: number }> = {};
+    for (const p of products) {
+      const entry = (map[p.category] ||= { count: 0, minPrice: Infinity });
+      entry.count += 1;
+      entry.minPrice = Math.min(entry.minPrice, p.price);
+    }
+    return map;
+  }, [products]);
+
+  const bestSellers = useMemo(
+    () => [...products].sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0) || b.rating - a.rating).slice(0, 4),
+    [products]
+  );
 
   return (
     <div className="min-h-screen bg-white">
@@ -162,7 +157,13 @@ function CategoriesPage() {
                     </div>
                     <div>
                       <h3 className="text-2xl font-bold">{cat.name}</h3>
-                      <p className="text-xs text-gray-200">{cat.itemCount}</p>
+                      <p className="text-xs text-gray-200">
+                        {stats[cat.name]
+                          ? `${stats[cat.name].count} ${stats[cat.name].count === 1 ? "product" : "products"} · from ${formatPrice(stats[cat.name].minPrice)}`
+                          : loading
+                          ? "Loading…"
+                          : "Coming soon"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -197,7 +198,7 @@ function CategoriesPage() {
                   Live Catalog Preview
                 </span>
                 <h2 className="text-3xl font-black text-gray-900 mt-2">
-                  Featured Category Items
+                  Best Sellers Across Categories
                 </h2>
               </div>
               <Link
@@ -209,7 +210,7 @@ function CategoriesPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {products.slice(0, 4).map((product) => (
+              {bestSellers.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
             </div>
@@ -232,7 +233,7 @@ function CategoriesPage() {
           </div>
 
           <Link
-            to="/products"
+            to="/products?sale=true"
             className="bg-white text-black px-8 py-4 rounded-full font-bold text-base hover:bg-black hover:text-white transition shadow-lg shrink-0"
           >
             Explore All Deals

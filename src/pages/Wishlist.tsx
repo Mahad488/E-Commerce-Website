@@ -7,16 +7,19 @@ import Footer from "../components/Footer";
 import { useWishlist } from "../context/WishlistContext";
 import { useCart } from "../context/CartContext";
 import { useToast } from "../context/ToastContext";
+import { useCurrency } from "../context/CurrencyContext";
+import type { Product } from "../data/products";
+import { getImageUrl, imageFallbackHandler } from "../lib/catalog";
 
 export default function Wishlist() {
   const { wishlist, removeFromWishlist } = useWishlist();
   const { addToCart } = useCart();
   const { showToast } = useToast();
+  const { formatPrice } = useCurrency();
 
-  const handleMoveToCart = (product: any) => {
+  const handleMoveToCart = (product: Product) => {
     addToCart(product);
     removeFromWishlist(product.id);
-    showToast(`${product.name} moved to cart! 🛒`, "success");
   };
 
   return (
@@ -67,7 +70,8 @@ export default function Wishlist() {
                   <div className="relative overflow-hidden">
                     <Link to={`/products/${product.id}`}>
                       <img
-                        src={product.image}
+                        src={getImageUrl(product.image, product.category)}
+                        onError={imageFallbackHandler(product.category)}
                         alt={product.name}
                         className="w-full h-64 object-cover hover:scale-105 transition duration-500"
                       />
@@ -93,7 +97,7 @@ export default function Wishlist() {
                       </h3>
                     </Link>
                     <div className="mt-2 font-bold text-gray-900">
-                      ${Number(product.price).toFixed(2)}
+                      {formatPrice(Number(product.price))}
                     </div>
                   </div>
                 </div>

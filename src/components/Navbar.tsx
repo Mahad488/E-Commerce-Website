@@ -1,23 +1,23 @@
-import { Search, ShoppingCart, Heart, Menu, X, ArrowRight, Sparkles } from "lucide-react";
+import { Search, ShoppingCart, Heart, Menu, X, ArrowRight, Sparkles, Globe, PackageSearch } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useWishlist } from "../context/WishlistContext";
+import { useCurrency } from "../context/CurrencyContext";
 import { API_BASE_URL } from "../config/api";
 import type { Product } from "../data/products";
+import { getImageUrl, imageFallbackHandler } from "../lib/catalog";
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { cartCount } = useCart();
+  const { cartCount, openCart } = useCart();
   const { wishlistCount } = useWishlist();
   const { user, isAuthenticated, logout } = useAuth();
+  const { currentCurrency, openDrawer, formatPrice } = useCurrency();
   const navigate = useNavigate();
 
-  // Animation bump triggers
-  const [cartAnimate, setCartAnimate] = useState(false);
-  const [wishlistAnimate, setWishlistAnimate] = useState(false);
 
   // Search Autocomplete state
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,23 +34,7 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Trigger bounce when cartCount updates
-  useEffect(() => {
-    if (cartCount > 0) {
-      setCartAnimate(true);
-      const timer = setTimeout(() => setCartAnimate(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [cartCount]);
-
-  // Trigger bounce when wishlistCount updates
-  useEffect(() => {
-    if (wishlistCount > 0) {
-      setWishlistAnimate(true);
-      const timer = setTimeout(() => setWishlistAnimate(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [wishlistCount]);
+  // The count badges are keyed by their value, so the bounce animation replays on every change.
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -62,12 +46,16 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  useEffect(() => {
-    if (!searchQuery.trim()) {
+  const updateSearch = (value: string) => {
+    setSearchQuery(value);
+    if (!value.trim()) {
       setSearchResults([]);
       setShowSearchDropdown(false);
-      return;
     }
+  };
+
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -94,6 +82,14 @@ export default function Navbar() {
     navigate("/");
   };
 
+  const submitSearch = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const term = searchQuery.trim();
+    setShowSearchDropdown(false);
+    setMenuOpen(false);
+    navigate(term ? `/products?search=${encodeURIComponent(term)}` : "/products");
+  };
+
   const handleSelectProduct = (productId: number) => {
     setShowSearchDropdown(false);
     setSearchQuery("");
@@ -101,7 +97,8 @@ export default function Navbar() {
   };
 
   const tickerItems = [
-    "✨ FREE WORLDWIDE SHIPPING ON ORDERS OVER $100",
+    "✨ FREE SHIPPING ON ORDERS OVER $100",
+    "🎁 NEW HERE? USE CODE WELCOME10 FOR 10% OFF",
     "⚡ FLASH SALE: UP TO 40% OFF THIS SEASON",
     "🛡️ 30-DAY MONEY-BACK SATISFACTION GUARANTEE",
     "⭐ JOIN 10,000+ HAPPY CUSTOMERS TODAY",
@@ -116,19 +113,32 @@ export default function Navbar() {
       }`}
     >
       {/* Top Animated Announcement Marquee */}
-      <div className="bg-neutral-950 text-white overflow-hidden py-1.5 text-xs font-medium tracking-wide">
-        <div className="animate-marquee whitespace-nowrap flex items-center gap-12">
-          {/* Double items for continuous seamless loop */}
-          {[...tickerItems, ...tickerItems].map((text, idx) => (
-            <span
-              key={idx}
-              className="inline-flex items-center gap-3 text-[11px] font-semibold text-gray-200"
-            >
-              <Sparkles size={12} className="text-orange-400 shrink-0" />
-              {text}
-            </span>
-          ))}
+      <div className="bg-neutral-950 text-white overflow-hidden py-1.5 px-4 text-xs font-medium tracking-wide flex items-center justify-between">
+        <div className="flex-1 overflow-hidden">
+          <div className="animate-marquee whitespace-nowrap flex items-center gap-12">
+            {/* Double items for continuous seamless loop */}
+            {[...tickerItems, ...tickerItems].map((text, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-3 text-[11px] font-semibold text-gray-200"
+              >
+                <Sparkles size={12} className="text-orange-400 shrink-0" />
+                {text}
+              </span>
+            ))}
+          </div>
         </div>
+
+        {/* Currency Quick Trigger */}
+        <button
+          onClick={openDrawer}
+          className="shrink-0 hidden md:inline-flex items-center gap-1.5 ml-4 px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 text-[11px] font-bold border border-white/15 transition-all cursor-pointer"
+          title="Open Currency & Country Box"
+        >
+          <span>{currentCurrency.flag}</span>
+          <span>{currentCurrency.code} ({currentCurrency.symbol})</span>
+          <span className="text-gray-400 font-normal">| Change</span>
+        </button>
       </div>
 
       <div className="max-w-7xl mx-auto px-5 lg:px-8">
@@ -185,23 +195,28 @@ export default function Navbar() {
                 SALE
               </span>
             </Link>
-            <a
-              href="#footer"
+            <Link
+              to="/contact"
               className="nav-hover-indicator hover:text-orange-600 transition-colors py-1"
             >
               Contact
-            </a>
+            </Link>
           </nav>
 
           {/* Live Search Autocomplete */}
           <div ref={searchRef} className="relative hidden md:block w-72">
-            <div className="flex items-center bg-gray-100/90 hover:bg-gray-100 rounded-full px-4 py-2.5 transition focus-within:ring-2 focus-within:ring-orange-500 focus-within:bg-white shadow-inner">
+            <form
+              role="search"
+              onSubmit={submitSearch}
+              className="flex items-center bg-gray-100/90 hover:bg-gray-100 rounded-full px-4 py-2.5 transition focus-within:ring-2 focus-within:ring-orange-500 focus-within:bg-white shadow-inner"
+            >
               <Search size={18} className="text-gray-400 shrink-0" />
               <input
                 type="text"
+                aria-label="Search products"
                 placeholder="Search products..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => updateSearch(e.target.value)}
                 onFocus={() => {
                   if (searchResults.length > 0) setShowSearchDropdown(true);
                 }}
@@ -209,13 +224,15 @@ export default function Navbar() {
               />
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery("")}
+                  type="button"
+                  onClick={() => updateSearch("")}
+                  aria-label="Clear search"
                   className="text-gray-400 hover:text-black transition"
                 >
                   <X size={15} />
                 </button>
               )}
-            </div>
+            </form>
 
             {/* Live Autocomplete Dropdown Popup */}
             {showSearchDropdown && (
@@ -236,7 +253,8 @@ export default function Navbar() {
                         className="group w-full p-3 flex items-center gap-3 hover:bg-orange-50/80 transition text-left border-b last:border-0"
                       >
                         <img
-                          src={item.image}
+                          src={getImageUrl(item.image, item.category)}
+                          onError={imageFallbackHandler(item.category)}
                           alt={item.name}
                           className="w-10 h-10 object-cover rounded-lg bg-gray-100 shrink-0 group-hover:scale-105 transition duration-300"
                         />
@@ -245,7 +263,7 @@ export default function Navbar() {
                             {item.name}
                           </p>
                           <p className="text-[11px] text-gray-500">
-                            {item.category} • ${Number(item.price).toFixed(2)}
+                            {item.category} • {formatPrice(Number(item.price))}
                           </p>
                         </div>
                         <ArrowRight
@@ -254,6 +272,12 @@ export default function Navbar() {
                         />
                       </button>
                     ))}
+                    <button
+                      onClick={() => submitSearch()}
+                      className="w-full px-4 py-2.5 text-xs font-bold text-orange-600 hover:bg-orange-50 text-left"
+                    >
+                      See all results for "{searchQuery.trim()}" →
+                    </button>
                   </div>
                 )}
               </div>
@@ -273,7 +297,7 @@ export default function Navbar() {
 
                 <button
                   onClick={handleLogout}
-                  className="rounded-full border border-gray-200 px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
+                  className="hidden sm:inline-flex rounded-full border border-gray-200 px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
                 >
                   Logout
                 </button>
@@ -289,12 +313,27 @@ export default function Navbar() {
 
                 <Link
                   to="/register"
-                  className="rounded-full bg-black px-4 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-orange-500 hover:shadow-md hover:shadow-orange-500/20 active:scale-95 transition-all"
+                  className="hidden sm:inline-flex rounded-full bg-black px-4 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-orange-500 hover:shadow-md hover:shadow-orange-500/20 active:scale-95 transition-all"
                 >
                   Sign Up
                 </Link>
               </div>
             )}
+
+            {/* Currency & Country Sider Box Trigger Button */}
+            <button
+              onClick={openDrawer}
+              className="group hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gray-100 hover:bg-orange-50 border border-gray-200 hover:border-orange-300 text-gray-800 hover:text-orange-600 transition-all text-xs font-bold shadow-xs active:scale-95 cursor-pointer"
+              title="Open Country Prices & Currency Box"
+              aria-label="Open Country Prices & Currency Box"
+            >
+              <Globe size={15} className="text-orange-500 group-hover:rotate-45 transition-transform duration-300 shrink-0" />
+              <span className="text-sm leading-none shrink-0">{currentCurrency.flag}</span>
+              <span className="font-extrabold">{currentCurrency.code}</span>
+              <span className="hidden xl:inline text-[11px] text-gray-500 font-medium">
+                ({currentCurrency.symbol})
+              </span>
+            </button>
 
             {/* Wishlist Link & Animated Counter */}
             <Link
@@ -305,9 +344,8 @@ export default function Navbar() {
               <Heart size={21} className="transition-transform active:scale-90" />
               {wishlistCount > 0 && (
                 <span
-                  className={`absolute -top-1 -right-1 bg-rose-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                    wishlistAnimate ? "animate-heart-pop" : ""
-                  }`}
+                  key={wishlistCount}
+                  className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm animate-heart-pop"
                 >
                   {wishlistCount}
                 </span>
@@ -315,28 +353,62 @@ export default function Navbar() {
             </Link>
 
             {/* Cart Link & Animated Counter */}
-            <Link
-              to="/cart"
+            <button
+              type="button"
+              onClick={openCart}
               className="relative p-2 rounded-full hover:bg-orange-50 text-gray-700 hover:text-orange-600 transition-all duration-200"
-              aria-label={`Shopping cart with ${cartCount} items`}
+              aria-label={`Open cart with ${cartCount} items`}
             >
               <ShoppingCart size={21} className="transition-transform active:scale-90" />
               {cartCount > 0 && (
                 <span
-                  className={`absolute -top-1 -right-1 bg-orange-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                    cartAnimate ? "animate-cart-bump" : ""
-                  }`}
+                  key={cartCount}
+                  className="absolute -top-1 -right-1 bg-orange-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm animate-cart-bump"
                 >
                   {cartCount}
                 </span>
               )}
-            </Link>
+            </button>
           </div>
         </div>
 
         {/* Animated Mobile Navigation Menu */}
         {menuOpen && (
           <nav className="lg:hidden flex flex-col gap-3 py-5 border-t border-gray-100 text-sm font-medium animate-in slide-in-from-top-4 duration-300">
+            <form
+              role="search"
+              onSubmit={submitSearch}
+              className="md:hidden flex items-center bg-gray-100 rounded-xl px-3.5 py-2.5 focus-within:ring-2 focus-within:ring-orange-500"
+            >
+              <Search size={17} className="text-gray-400 shrink-0" />
+              <input
+                type="search"
+                aria-label="Search products"
+                placeholder="Search products..."
+                value={searchQuery}
+                onChange={(e) => updateSearch(e.target.value)}
+                className="bg-transparent outline-none text-sm ml-2 w-full"
+              />
+            </form>
+            {/* Currency Drawer Trigger in Mobile Menu */}
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                openDrawer();
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-orange-50/80 border border-orange-200 text-orange-950 transition flex items-center justify-between font-bold text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <Globe size={18} className="text-orange-500" />
+                <span className="text-xs">Country & Currency Box</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-orange-100 text-xs shadow-2xs font-extrabold text-gray-900">
+                <span>{currentCurrency.flag}</span>
+                <span>{currentCurrency.code}</span>
+                <span className="text-orange-600 font-normal">({currentCurrency.symbol})</span>
+              </div>
+            </button>
+
             <Link
               to="/"
               onClick={() => setMenuOpen(false)}
@@ -388,13 +460,49 @@ export default function Navbar() {
                 {cartCount}
               </span>
             </Link>
-            <a
-              href="#footer"
+            {isAuthenticated ? (
+              <div className="sm:hidden flex gap-2">
+                <Link
+                  to="/account"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex-1 text-center px-3 py-2 rounded-lg bg-gray-100 font-semibold"
+                >
+                  My Account
+                </Link>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 font-semibold"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/register"
+                onClick={() => setMenuOpen(false)}
+                className="sm:hidden text-center px-3 py-2.5 rounded-lg bg-black text-white font-semibold"
+              >
+                Create an account
+              </Link>
+            )}
+            <Link
+              to="/track-order"
+              onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 rounded-lg hover:bg-gray-100 transition flex items-center gap-2"
+            >
+              <PackageSearch size={16} className="text-orange-500" />
+              Track Order
+            </Link>
+            <Link
+              to="/contact"
               onClick={() => setMenuOpen(false)}
               className="px-3 py-2 rounded-lg hover:bg-gray-100 transition"
             >
               Contact Us
-            </a>
+            </Link>
           </nav>
         )}
       </div>

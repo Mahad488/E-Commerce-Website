@@ -1,28 +1,30 @@
+const crypto = require("crypto");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const { db } = require("../config/db");
+const { getUserSecret, isProduction } = require("../config/secrets");
 const { authenticateToken } = require("../middleware/auth");
+const rateLimit = require("../middleware/rateLimit");
 
 const router = express.Router();
 
-function createToken(user) {
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET is not configured");
-  }
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, name: "auth" });
+const recoveryLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, name: "recovery" });
 
+function createToken(user) {
   return jwt.sign(
     {
       id: user.id,
       email: user.email,
     },
-    process.env.JWT_SECRET,
-    { expiresIn: "1d" }
+    getUserSecret(),
+    { expiresIn: "7d" }
   );
 }
 
-router.post("/register", async (req, res) => {
+router.post("/register", authLimiter, async (req, res) => {
   try {
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
       return res.status(400).json({
@@ -111,7 +113,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   try {
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
       return res.status(400).json({
@@ -179,37 +181,8 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/**
- * Ensure `users` table has phone, address, city, country columns
- */
-async function ensureUserProfileColumns() {
-  try {
-    const columns = [
-      { name: "phone", type: "VARCHAR(50) NULL" },
-      { name: "address", type: "VARCHAR(255) NULL" },
-      { name: "city", type: "VARCHAR(100) NULL" },
-      { name: "country", type: "VARCHAR(100) NULL DEFAULT 'Pakistan'" },
-    ];
-
-    for (const col of columns) {
-      try {
-        await db.query(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`);
-      } catch (e) {
-        // Column may already exist, ignore error
-      }
-    }
-  } catch (err) {
-    console.warn("Could not alter users table:", err.message);
-  }
-}
-
-// Auto-run column check
-ensureUserProfileColumns();
-
 router.get("/profile", authenticateToken, async (req, res) => {
   try {
-    await ensureUserProfileColumns();
-
     const [users] = await db.execute(
       "SELECT id, name, email, phone, address, city, country, created_at FROM users WHERE id = ?",
       [req.user.id]
@@ -242,8 +215,6 @@ router.get("/profile", authenticateToken, async (req, res) => {
  */
 router.put("/profile", authenticateToken, async (req, res) => {
   try {
-    await ensureUserProfileColumns();
-
     const { name, phone, address, city, country } = req.body || {};
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -289,7 +260,7 @@ router.put("/change-password", authenticateToken, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
 
-    if (!currentPassword || !newPassword) {
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string" || !currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
         message: "Current password and new password are required",
@@ -362,35 +333,11 @@ router.put("/change-password", authenticateToken, async (req, res) => {
 });
 
 /**
- * Ensure `password_resets` table exists
- */
-async function ensurePasswordResetTable() {
-  try {
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS password_resets (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        reset_code VARCHAR(10) NOT NULL,
-        expires_at DATETIME NOT NULL,
-        used TINYINT(1) DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-  } catch (err) {
-    console.warn("Could not ensure password_resets table:", err.message);
-  }
-}
-
-// Auto-run reset table check
-ensurePasswordResetTable();
-
-/**
  * POST /api/auth/forgot-password
  * Generates a 6-digit verification code and initiates account recovery
  */
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", recoveryLimiter, async (req, res) => {
   try {
-    await ensurePasswordResetTable();
     const { email } = req.body || {};
 
     if (!email || typeof email !== "string" || !email.trim()) {
@@ -415,14 +362,23 @@ router.post("/forgot-password", async (req, res) => {
     );
 
     if (users.length === 0) {
+      if (isProduction) {
+        // Don't reveal which emails have accounts.
+        return res.status(200).json({
+          success: true,
+          message: "If that email is registered, a verification code is on its way.",
+          email: normalizedEmail,
+          expiresInMinutes: 15,
+        });
+      }
       return res.status(404).json({
         success: false,
         message: "No account registered with this email address. Please check spelling or create an account.",
       });
     }
 
-    // Generate secure 6-digit numeric verification code
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Cryptographically secure 6-digit verification code
+    const resetCode = crypto.randomInt(100000, 1000000).toString();
     // Expiration: 15 minutes
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
@@ -437,15 +393,22 @@ router.post("/forgot-password", async (req, res) => {
       [normalizedEmail, resetCode, expiresAt]
     );
 
-    console.log(`[AUTH] Password recovery code for ${normalizedEmail}: ${resetCode} (Valid until ${expiresAt.toLocaleTimeString()})`);
+    // No email service is wired up yet, so the code is logged on the server.
+    // Plug in an email provider (e.g. Nodemailer/Resend) here for production.
+    console.log(`[AUTH] Password recovery code for ${normalizedEmail}: ${resetCode} (valid until ${expiresAt.toLocaleTimeString()})`);
 
-    return res.status(200).json({
+    const response = {
       success: true,
-      message: `Verification code generated! Code sent to ${normalizedEmail}`,
+      message: `Verification code sent to ${normalizedEmail}`,
       email: normalizedEmail,
-      resetCode: resetCode, // Returned for instant demo testing
       expiresInMinutes: 15,
-    });
+    };
+    // Development convenience only: show the code in the UI so the flow can be tested
+    // without email. Never returned when NODE_ENV=production.
+    if (!isProduction) {
+      response.resetCode = resetCode;
+    }
+    return res.status(200).json(response);
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(500).json({
@@ -459,12 +422,11 @@ router.post("/forgot-password", async (req, res) => {
  * POST /api/auth/verify-reset-code
  * Validates whether the 6-digit code is genuine, unexpired, and unused
  */
-router.post("/verify-reset-code", async (req, res) => {
+router.post("/verify-reset-code", recoveryLimiter, async (req, res) => {
   try {
-    await ensurePasswordResetTable();
     const { email, resetCode } = req.body || {};
 
-    if (!email || !resetCode) {
+    if (typeof email !== "string" || !resetCode) {
       return res.status(400).json({
         success: false,
         message: "Email address and 6-digit verification code are required",
@@ -505,12 +467,11 @@ router.post("/verify-reset-code", async (req, res) => {
  * POST /api/auth/reset-password
  * Verifies code and updates the user's password with fresh bcrypt hash
  */
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", recoveryLimiter, async (req, res) => {
   try {
-    await ensurePasswordResetTable();
     const { email, resetCode, newPassword } = req.body || {};
 
-    if (!email || !resetCode || !newPassword) {
+    if (typeof email !== "string" || !resetCode || typeof newPassword !== "string" || !newPassword) {
       return res.status(400).json({
         success: false,
         message: "Email, verification code, and new password are required",

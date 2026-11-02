@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Eye,
   EyeOff,
@@ -21,9 +21,12 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { API_BASE_URL } from "../config/api";
+import { DEMO_CREDENTIALS, getRedirectTarget, loginRequest } from "../lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = getRedirectTarget(location);
   const { setSession } = useAuth();
   const { showToast } = useToast();
 
@@ -50,7 +53,7 @@ export default function Login() {
 
   // Recovery timer countdown
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (resendTimer > 0) {
       interval = setInterval(() => setResendTimer((t) => t - 1), 1000);
     }
@@ -82,60 +85,39 @@ export default function Login() {
 
     if (!validate()) return;
 
-    try {
-      setLoading(true);
+    setLoading(true);
+    const result = await loginRequest(email, password);
+    setLoading(false);
 
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password,
-        }),
-      });
-
-      const data: {
-        message: string;
-        token?: string;
-        user?: { id: number; name: string; email: string };
-      } = await response.json();
-
-      if (!response.ok) {
-        setApiError(data.message || "Invalid credentials. Please verify your email and password.");
-        return;
-      }
-
-      if (!data.token || !data.user) {
-        setApiError("Invalid response from server. Please try again.");
-        return;
-      }
-
-      setSession(data.user, data.token);
-      showToast(`Welcome back, ${data.user.name}! 👋`, "success");
-      navigate("/account");
-    } catch (error) {
-      console.warn("Backend login connection error:", error);
-      setApiError(
-        "Unable to connect to the authentication server. If running locally without MySQL, you can use the Demo Account button below."
-      );
-    } finally {
-      setLoading(false);
+    if (!result.ok || !result.user || !result.token) {
+      setApiError(result.message || "Invalid credentials. Please verify your email and password.");
+      return;
     }
+
+    setSession(result.user, result.token);
+    showToast(`Welcome back, ${result.user.name}! 👋`, "success");
+    navigate(redirectTo, { replace: true });
   };
 
-  // Quick 1-click Demo Account login
-  const handleQuickDemo = () => {
-    const demoUser = {
-      id: 999,
-      name: "Alex Morgan",
-      email: "alex.demo@novastore.com",
-    };
-    const demoToken = "demo-jwt-token-active";
-    setSession(demoUser, demoToken);
-    showToast("Signed in as Demo Shopper! ✨", "success");
-    navigate("/account");
+  // One-click sign in with the seeded demo shopper (a real account, so orders work).
+  const handleQuickDemo = async () => {
+    setApiError("");
+    setLoading(true);
+    const result = await loginRequest(DEMO_CREDENTIALS.email, DEMO_CREDENTIALS.password);
+    setLoading(false);
+
+    if (!result.ok || !result.user || !result.token) {
+      setApiError(
+        result.network
+          ? result.message || "Can't reach the server."
+          : "The demo account isn't set up yet. Run `npm run db:setup` in the backend folder."
+      );
+      return;
+    }
+
+    setSession(result.user, result.token);
+    showToast("Signed in as the demo shopper ✨", "success");
+    navigate(redirectTo, { replace: true });
   };
 
   // Password strength checklist for new password in recovery
@@ -177,7 +159,8 @@ export default function Login() {
       setRecoveryStep("code_password");
       setResendTimer(45);
       showToast("Verification code generated! ✉️", "success");
-    } catch (err: any) {
+    } catch (caught) {
+      const err = caught as Error;
       setRecoveryError(err.message || "Unable to reach server. Please check your network.");
     } finally {
       setRecoveryLoading(false);
@@ -201,7 +184,8 @@ export default function Login() {
       if (data.resetCode) setResetCode(data.resetCode);
       setResendTimer(45);
       showToast("Fresh verification code sent! ✉️", "info");
-    } catch (err: any) {
+    } catch (caught) {
+      const err = caught as Error;
       setRecoveryError(err.message || "Could not resend code. Please try again.");
     } finally {
       setRecoveryLoading(false);
@@ -248,7 +232,8 @@ export default function Login() {
 
       setRecoveryStep("success");
       showToast("Password updated successfully! 🎉", "success");
-    } catch (err: any) {
+    } catch (caught) {
+      const err = caught as Error;
       setRecoveryError(err.message || "An error occurred while resetting password.");
     } finally {
       setRecoveryLoading(false);
@@ -360,6 +345,7 @@ export default function Login() {
                 Don't have an account yet?{" "}
                 <Link
                   to="/register"
+                  state={location.state}
                   className="font-bold text-orange-600 hover:text-orange-700 hover:underline transition"
                 >
                   Create an account
@@ -573,7 +559,7 @@ export default function Login() {
                   className="w-full bg-orange-50 hover:bg-orange-100 border border-orange-200/80 text-orange-800 text-xs font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2"
                 >
                   <Sparkles size={14} className="text-orange-600" />
-                  <span>One-Click Guest Demo Login (Skip Form)</span>
+                  <span>Sign in with the demo account ({DEMO_CREDENTIALS.email})</span>
                 </button>
               </div>
             </form>

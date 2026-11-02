@@ -40,9 +40,11 @@ import {
   Lock,
   EyeOff,
   Key,
+  BarChart3,
 } from "lucide-react";
 
 import { API_BASE_URL } from "../../src/config/api";
+import AdminAnalytics from "./AdminAnalytics";
 import { useToast } from "../../src/context/ToastContext";
 import { products as fallbackProducts, type Product, type ProductColorVariant } from "../../src/data/products";
 
@@ -106,7 +108,7 @@ interface Order {
 export default function Admin() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"orders" | "products" | "add-product" | "settings">("orders");
+  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "products" | "add-product" | "settings">("overview");
 
   // Security & Password Settings State
   const [adminUsername, setAdminUsername] = useState("nova_admin");
@@ -135,6 +137,7 @@ export default function Admin() {
     let processing = 0;
     let shipped = 0;
     let delivered = 0;
+    let cancelled = 0;
 
     orders.forEach((o) => {
       const s = (o.status || "").toLowerCase();
@@ -142,6 +145,7 @@ export default function Admin() {
       else if (s === "processing") processing++;
       else if (s === "shipped") shipped++;
       else if (s === "delivered") delivered++;
+      else if (s === "cancelled") cancelled++;
     });
 
     return {
@@ -150,6 +154,7 @@ export default function Admin() {
       processing,
       shipped,
       delivered,
+      cancelled,
     };
   }, [orders]);
 
@@ -571,8 +576,8 @@ export default function Admin() {
       return;
     }
 
-    if (cleanNew.length < 6) {
-      setSecurityMessage({ type: "error", text: "New password must be at least 6 characters long." });
+    if (cleanNew.length < 8) {
+      setSecurityMessage({ type: "error", text: "New password must be at least 8 characters long." });
       return;
     }
 
@@ -634,6 +639,8 @@ export default function Admin() {
     }
   };
 
+  // Initial load on mount. fetchData/fetchAdminProfile also run from buttons, so they
+  // aren't memoised; this effect intentionally runs only once.
   useEffect(() => {
     const token = localStorage.getItem("nova_admin_token");
     if (!token || token === "demo_admin_preview_token") {
@@ -642,13 +649,15 @@ export default function Admin() {
       return;
     }
     fetchData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAdminProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleUpdateStatus = async (orderId: number, newStatus: string) => {
     const token = localStorage.getItem("nova_admin_token");
     try {
-      const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/orders/${orderId}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -659,8 +668,11 @@ export default function Admin() {
       if (res.ok) {
         showToast(`Order #${orderId} status updated to ${newStatus}`, "success");
         fetchData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.message || "Failed to update status", "error");
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to update status", "error");
     }
   };
@@ -677,7 +689,7 @@ export default function Admin() {
         showToast("Product deleted successfully", "info");
         fetchData();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to delete product", "error");
     }
   };
@@ -721,7 +733,7 @@ export default function Admin() {
       } else {
         showToast(data.message || "Failed to create product", "error");
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to create product", "error");
     }
   };
@@ -818,8 +830,8 @@ export default function Admin() {
         </section>
 
         <main className="max-w-7xl mx-auto px-5 lg:px-8 py-10">
-          {/* Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
+          {/* Metric Cards (the Overview tab has its own, richer ones) */}
+          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 ${activeTab === "overview" ? "hidden" : ""}`}>
             <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -866,6 +878,17 @@ export default function Admin() {
           {/* Navigation Tabs */}
           <div className="flex border-b border-gray-200 mb-8 gap-4 overflow-x-auto">
             <button
+              onClick={() => setActiveTab("overview")}
+              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 ${
+                activeTab === "overview"
+                  ? "border-orange-500 text-orange-500"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              <BarChart3 size={16} />
+              Overview
+            </button>
+            <button
               onClick={() => setActiveTab("orders")}
               className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 ${
                 activeTab === "orders"
@@ -908,6 +931,10 @@ export default function Admin() {
               Security &amp; Password
             </button>
           </div>
+
+          {activeTab === "overview" && (
+            <AdminAnalytics onGoToProducts={() => setActiveTab("products")} onGoToOrders={() => setActiveTab("orders")} />
+          )}
 
           {/* Tab 1: Orders List */}
           {activeTab === "orders" && (
@@ -968,6 +995,7 @@ export default function Admin() {
                       <option value="Processing" className="text-blue-800 bg-white">Processing ({orderCounts.processing})</option>
                       <option value="Shipped" className="text-purple-800 bg-white">Shipped ({orderCounts.shipped})</option>
                       <option value="Delivered" className="text-emerald-800 bg-white">Delivered ({orderCounts.delivered})</option>
+                      <option value="Cancelled" className="text-red-800 bg-white">Cancelled ({orderCounts.cancelled})</option>
                     </select>
                   </div>
 
@@ -1167,6 +1195,8 @@ export default function Admin() {
                                   ? "bg-purple-50 text-purple-800 border-purple-300"
                                   : order.status === "Delivered"
                                   ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                  : order.status === "Cancelled"
+                                  ? "bg-red-50 text-red-800 border-red-300"
                                   : "bg-white text-gray-800 border-gray-200"
                               }`}
                             >
@@ -1174,6 +1204,7 @@ export default function Admin() {
                               <option value="Processing">Processing</option>
                               <option value="Shipped">Shipped</option>
                               <option value="Delivered">Delivered</option>
+                              <option value="Cancelled">Cancelled</option>
                             </select>
                           </td>
                           <td className="py-4 text-right">
@@ -2220,7 +2251,7 @@ export default function Admin() {
                         required
                         minLength={6}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
-                        placeholder="At least 6 characters"
+                        placeholder="At least 8 characters"
                       />
                       <button
                         type="button"

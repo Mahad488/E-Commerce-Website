@@ -31,6 +31,7 @@ import Footer from "../components/Footer";
 import OrderInvoiceModal from "../components/OrderInvoiceModal";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { useCurrency } from "../context/CurrencyContext";
 import { API_BASE_URL } from "../config/api";
 
 interface ProfileUser {
@@ -58,6 +59,10 @@ interface OrderItem {
 interface Order {
   id: number;
   total_amount: string | number;
+  subtotal?: string | number;
+  shipping_fee?: string | number;
+  discount_amount?: string | number;
+  coupon_code?: string | null;
   status: string;
   address?: string;
   mobile_number?: string;
@@ -98,6 +103,7 @@ const PROFILE_COUNTRIES = [
 export default function Account() {
   const { user, token, logout, updateUser } = useAuth();
   const { showToast } = useToast();
+  const { formatPrice } = useCurrency();
   const navigate = useNavigate();
 
   const [profile, setProfile] = useState<ProfileUser | null>(null);
@@ -202,8 +208,8 @@ export default function Account() {
       });
       const data = await res.json();
       if (res.ok) {
-        showToast("Order cancelled successfully ✓", "success");
-        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        showToast("Order cancelled — items returned to stock ✓", "success");
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "Cancelled" } : o)));
       } else {
         showToast(data.message || "Failed to cancel order", "error");
       }
@@ -214,16 +220,18 @@ export default function Account() {
     }
   };
 
-  useEffect(() => {
-    const active = profile || user;
-    if (active) {
-      setEditName(active.name || "");
-      setEditPhone(active.phone || "");
-      setEditAddress(active.address || "");
-      setEditCity(active.city || "");
-      setEditCountry(active.country || "Pakistan");
-    }
-  }, [profile, user]);
+  // Refill the edit form whenever a fresh profile arrives (adjusting state during render,
+  // as recommended over a syncing effect).
+  const profileSource = profile || user;
+  const [syncedSource, setSyncedSource] = useState<typeof profileSource>(null);
+  if (profileSource && profileSource !== syncedSource) {
+    setSyncedSource(profileSource);
+    setEditName(profileSource.name || "");
+    setEditPhone(profileSource.phone || "");
+    setEditAddress(profileSource.address || "");
+    setEditCity(profileSource.city || "");
+    setEditCountry(profileSource.country || "Pakistan");
+  }
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -328,11 +336,10 @@ export default function Account() {
 
   const currentUser = profile || user;
 
-  const totalSpent = orders.reduce(
-    (sum, o) => sum + Number(o.total_amount || 0),
-    0
-  );
-  const activeOrdersCount = orders.filter((o) => o.status !== "Delivered").length;
+  const totalSpent = orders
+    .filter((o) => o.status !== "Cancelled")
+    .reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+  const activeOrdersCount = orders.filter((o) => o.status !== "Delivered" && o.status !== "Cancelled").length;
 
   if (loading) {
     return (
@@ -410,7 +417,7 @@ export default function Account() {
             <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Amount Spent</p>
-                <h3 className="text-2xl font-black text-emerald-600 mt-1">${totalSpent.toFixed(2)}</h3>
+                <h3 className="text-2xl font-black text-emerald-600 mt-1">{formatPrice(totalSpent)}</h3>
               </div>
               <div className="p-3 bg-emerald-50 text-emerald-500 rounded-xl">
                 <DollarSign size={24} />
@@ -494,6 +501,8 @@ export default function Account() {
                                     ? "bg-blue-50 text-blue-600 border-blue-200"
                                     : order.status === "Shipped"
                                     ? "bg-purple-50 text-purple-600 border-purple-200"
+                                    : order.status === "Cancelled"
+                                    ? "bg-red-50 text-red-600 border-red-200"
                                     : "bg-emerald-50 text-emerald-600 border-emerald-200"
                                 }`}
                               >
@@ -538,7 +547,7 @@ export default function Account() {
 
                           <div className="text-right flex flex-col items-end gap-2">
                             <span className="font-black text-orange-500 text-xl block">
-                              ${Number(order.total_amount).toFixed(2)}
+                              {formatPrice(Number(order.total_amount))}
                             </span>
 
                             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -617,7 +626,7 @@ export default function Account() {
                                       </span>
                                     </div>
                                     <p className="text-[11px] font-black text-gray-900 mt-0.5">
-                                      ${(Number(item.price) * item.quantity).toFixed(2)}
+                                      {formatPrice(Number(item.price) * item.quantity)}
                                     </p>
                                   </div>
                                 </div>
@@ -646,6 +655,12 @@ export default function Account() {
                         )}
 
                         {/* Live Step Progress Bar */}
+                        {order.status === "Cancelled" ? (
+                          <div className="flex items-center gap-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+                            <XCircle size={16} />
+                            This order was cancelled and any reserved stock was released.
+                          </div>
+                        ) : (
                         <div>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                             Delivery Step Tracker
@@ -671,7 +686,14 @@ export default function Account() {
                               );
                             })}
                           </div>
+                          <Link
+                            to={`/track-order?orderId=${order.id}&email=${encodeURIComponent(currentUser?.email || "")}`}
+                            className="inline-block mt-3 text-xs font-bold text-orange-600 hover:underline"
+                          >
+                            View detailed tracking →
+                          </Link>
                         </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1042,6 +1064,11 @@ export default function Account() {
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
                 Delivery Tracker
               </p>
+              {viewingOrder.status === "Cancelled" ? (
+                <p className="text-sm font-semibold text-red-600 flex items-center gap-2">
+                  <XCircle size={16} /> This order was cancelled.
+                </p>
+              ) : (
               <div className="grid grid-cols-4 gap-2 text-center">
                 {ORDER_STEPS.map((step, idx) => {
                   const isPassed = idx <= getStepIndex(viewingOrder.status);
@@ -1063,6 +1090,7 @@ export default function Account() {
                   );
                 })}
               </div>
+              )}
             </div>
 
             {/* Shipping Location & Payment */}
@@ -1165,13 +1193,13 @@ export default function Account() {
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">
-                            Qty: <span className="font-bold text-gray-800">{item.quantity}</span> × ${Number(item.price).toFixed(2)}
+                            Qty: <span className="font-bold text-gray-800">{item.quantity}</span> × {formatPrice(Number(item.price))}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
                         <span className="font-black text-gray-900 text-sm md:text-base">
-                          ${(Number(item.price) * item.quantity).toFixed(2)}
+                          {formatPrice(Number(item.price) * item.quantity)}
                         </span>
                       </div>
                     </div>
@@ -1184,16 +1212,28 @@ export default function Account() {
             <div className="bg-gray-50 p-4 rounded-2xl border space-y-2">
               <div className="flex justify-between text-xs text-gray-600">
                 <span>Items Subtotal:</span>
-                <span className="font-bold">${Number(viewingOrder.total_amount).toFixed(2)}</span>
+                <span className="font-bold">
+                  {formatPrice(Number(viewingOrder.subtotal) || Number(viewingOrder.total_amount))}
+                </span>
               </div>
+              {Number(viewingOrder.discount_amount) > 0 && (
+                <div className="flex justify-between text-xs text-emerald-700">
+                  <span>Discount{viewingOrder.coupon_code ? ` (${viewingOrder.coupon_code})` : ""}:</span>
+                  <span className="font-bold">−{formatPrice(Number(viewingOrder.discount_amount))}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-gray-600">
                 <span>Delivery & Shipping:</span>
-                <span className="font-bold text-emerald-600">Free Delivery</span>
+                {Number(viewingOrder.shipping_fee) > 0 ? (
+                  <span className="font-bold">{formatPrice(Number(viewingOrder.shipping_fee))}</span>
+                ) : (
+                  <span className="font-bold text-emerald-600">Free Delivery</span>
+                )}
               </div>
               <div className="border-t pt-2 flex justify-between items-center">
                 <span className="text-xs font-bold text-gray-900 uppercase">Grand Total Amount:</span>
                 <span className="text-2xl font-black text-orange-500">
-                  ${Number(viewingOrder.total_amount).toFixed(2)}
+                  {formatPrice(Number(viewingOrder.total_amount))}
                 </span>
               </div>
             </div>
@@ -1243,6 +1283,10 @@ export default function Account() {
             id: selectedInvoiceOrder.id,
             created_at: selectedInvoiceOrder.created_at,
             total_amount: selectedInvoiceOrder.total_amount,
+            subtotal: selectedInvoiceOrder.subtotal,
+            shipping_fee: selectedInvoiceOrder.shipping_fee,
+            discount_amount: selectedInvoiceOrder.discount_amount,
+            coupon_code: selectedInvoiceOrder.coupon_code,
             status: selectedInvoiceOrder.status,
             address: selectedInvoiceOrder.address || profile?.address || undefined,
             mobile_number: selectedInvoiceOrder.mobile_number || profile?.phone || undefined,

@@ -8,7 +8,9 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { API_BASE_URL } from "../config/api";
 
 const categories = [
   {
@@ -19,7 +21,6 @@ const categories = [
     badge: "Trending",
     badgeBg: "bg-pink-500",
     description: "Apparel, Jackets & Casual Wear",
-    itemCount: "20+ Items",
   },
   {
     name: "Electronics",
@@ -29,7 +30,6 @@ const categories = [
     badge: "Best Seller",
     badgeBg: "bg-blue-500",
     description: "Headphones, Audio & Tech",
-    itemCount: "15+ Items",
   },
   {
     name: "Accessories",
@@ -39,7 +39,6 @@ const categories = [
     badge: "Popular",
     badgeBg: "bg-amber-500",
     description: "Watches, Sunglasses & Bags",
-    itemCount: "18+ Items",
   },
   {
     name: "Lifestyle",
@@ -49,7 +48,6 @@ const categories = [
     badge: "New",
     badgeBg: "bg-emerald-500",
     description: "Mugs, Travel & Living",
-    itemCount: "12+ Items",
   },
   {
     name: "Footwear",
@@ -59,7 +57,6 @@ const categories = [
     badge: "Hot Deals",
     badgeBg: "bg-purple-500",
     description: "Sneakers & Sports Shoes",
-    itemCount: "10+ Items",
   },
   {
     name: "Gaming & Tech",
@@ -69,11 +66,26 @@ const categories = [
     badge: "Featured",
     badgeBg: "bg-indigo-500",
     description: "Keyboards & Fitness Bands",
-    itemCount: "8+ Items",
   },
 ];
 
 export default function Categories() {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/api/products/categories`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !Array.isArray(data?.categories)) return;
+        setCounts(Object.fromEntries(data.categories.map((c: { name: string; count: number }) => [c.name, c.count])));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <section id="categories" className="py-20 lg:py-28 bg-white scroll-reveal">
       <div className="max-w-7xl mx-auto px-5 lg:px-8">
@@ -129,9 +141,11 @@ export default function Categories() {
                     <h3 className="text-xl font-bold text-gray-900 group-hover:text-orange-600 transition-colors">
                       {cat.name}
                     </h3>
-                    <span className="text-xs font-semibold text-gray-400">
-                      {cat.itemCount}
-                    </span>
+                    {counts[cat.name] !== undefined && (
+                      <span className="text-xs font-semibold text-gray-400">
+                        {counts[cat.name]} {counts[cat.name] === 1 ? "item" : "items"}
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-xs text-gray-500 mt-2 font-medium">

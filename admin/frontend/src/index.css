@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Tailwind v4 made the default border colour `currentColor` (v3 used gray-200).
+   The components here were written for the v3 default, so restore it. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

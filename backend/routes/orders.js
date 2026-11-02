@@ -3,38 +3,36 @@ const express = require("express");
 const { db } = require("../config/db");
 const verifyToken = require("../middleware/authMiddleware");
 const { verifyAdmin } = require("./admin");
+const {
+  parseColors,
+  findVariant,
+  toCents,
+  fromCents,
+  evaluateCoupon,
+  shippingCentsFor,
+  recordStatus,
+  changeOrderStatus,
+  loadOrdersWithItems,
+} = require("../services/orderService");
+
+const router = express.Router();
+
+const clean = (value, max = 255) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
 /**
- * Ensure `orders` table has payment_status and transaction_id columns
+ * POST /api/orders
+ * Places an order. Prices, shipping and coupon discounts are always
+ * recalculated on the server — the client total is never trusted.
  */
-async function ensureOrdersColumns() {
-  try {
-    const cols = [
-      { name: "payment_status", type: "VARCHAR(50) DEFAULT 'Pending'" },
-      { name: "transaction_id", type: "VARCHAR(100) NULL" },
-    ];
-    for (const c of cols) {
-      try {
-        await db.query(`ALTER TABLE orders ADD COLUMN ${c.name} ${c.type}`);
-      } catch (err) {
-        // column may already exist, ignore
-      }
-    }
-  } catch (e) {
-    console.warn("Could not ensure orders table columns:", e.message);
-  }
-}
-ensureOrdersColumns();
-
 router.post("/", verifyToken, async (req, res) => {
-  await ensureOrdersColumns();
-  const { items, address, mobile_number, city, country, payment_method, payment_details } = req.body || {};
+  const { items, payment_method, payment_details, coupon_code } = req.body || {};
+  const address = clean(req.body?.address);
+  const mobile = clean(req.body?.mobile_number, 50);
+  const city = clean(req.body?.city, 100);
+  const country = clean(req.body?.country, 100);
 
   if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Cart is empty",
-    });
+    return res.status(400).json({ success: false, message: "Cart is empty" });
   }
 
   if (
@@ -45,129 +43,143 @@ router.post("/", verifyToken, async (req, res) => {
         !Number.isSafeInteger(item.product_id) ||
         item.product_id <= 0 ||
         !Number.isSafeInteger(item.quantity) ||
-        item.quantity <= 0
+        item.quantity <= 0 ||
+        item.quantity > 99
     )
   ) {
     return res.status(400).json({
       success: false,
-      message: "Order items must have a valid product_id and positive quantity",
+      message: "Order items must have a valid product_id and a quantity between 1 and 99",
     });
   }
 
-  const productIds = items.map((item) => item.product_id);
-  const uniqueProductIds = Array.from(new Set(productIds));
+  if (!address || !mobile || !city || !country) {
+    return res.status(400).json({
+      success: false,
+      message: "Address, mobile number, city and country are required",
+    });
+  }
+
+  const uniqueProductIds = Array.from(new Set(items.map((item) => item.product_id)));
 
   let connection;
-  let transactionStarted = false;
-
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
-    transactionStarted = true;
 
     const placeholders = uniqueProductIds.map(() => "?").join(", ");
     const [products] = await connection.query(
       `SELECT id, name, price, stock, colors, image FROM products WHERE id IN (${placeholders}) FOR UPDATE`,
       uniqueProductIds
     );
-    const productsById = new Map(
-      products.map((product) => [Number(product.id), product])
-    );
 
     if (products.length !== uniqueProductIds.length) {
       await connection.rollback();
-      transactionStarted = false;
-      return res.status(400).json({
-        success: false,
-        message: "One or more products no longer exist",
-      });
+      return res.status(400).json({ success: false, message: "One or more products no longer exist" });
     }
 
-    let totalCents = 0;
+    const productsById = new Map(
+      products.map((p) => [Number(p.id), { ...p, stock: Number(p.stock) || 0, colors: parseColors(p.colors) }])
+    );
+
+    let subtotalCents = 0;
     const orderItems = [];
 
     for (const item of items) {
       const product = productsById.get(item.product_id);
-      const priceCents = Math.round(Number(product.price) * 100);
+      const priceCents = toCents(product.price);
 
-      if (!Number.isFinite(priceCents) || priceCents < 0) {
-        throw new Error(`Invalid database price for product ${item.product_id}`);
-      }
-
-      if (Number(product.stock) < item.quantity) {
+      if (product.stock < item.quantity) {
         await connection.rollback();
-        transactionStarted = false;
         return res.status(409).json({
           success: false,
-          message: `Insufficient stock for product ${item.product_id}`,
+          message: `Only ${product.stock} of "${product.name}" left in stock (you requested ${item.quantity}).`,
         });
       }
 
-      // Ensure color is always resolved for every ordered item
-      let itemColor = item.color || item.selectedColor;
-      let itemColorImage = item.color_image || item.selectedColorImage;
+      let colorName = clean(item.color || item.selectedColor, 100);
+      let colorImage = clean(item.color_image || item.selectedColorImage, 500);
+      if (!colorName && product.colors[0]?.name) {
+        colorName = product.colors[0].name;
+        colorImage = colorImage || product.colors[0].image || "";
+      }
+      colorName = colorName || "Standard";
 
-      if (!itemColor && product.colors) {
-        try {
-          const parsedColors =
-            typeof product.colors === "string" ? JSON.parse(product.colors) : product.colors;
-          if (Array.isArray(parsedColors) && parsedColors.length > 0 && parsedColors[0].name) {
-            itemColor = parsedColors[0].name;
-            if (!itemColorImage && parsedColors[0].image) {
-              itemColorImage = parsedColors[0].image;
-            }
-          }
-        } catch {
-          // ignore
+      const variant = findVariant(product.colors, colorName);
+      if (variant && variant.quantity !== undefined && variant.quantity !== null) {
+        const available = Number(variant.quantity) || 0;
+        if (available < item.quantity) {
+          await connection.rollback();
+          return res.status(409).json({
+            success: false,
+            message: `Only ${available} of "${product.name}" (${variant.name}) left in stock.`,
+          });
         }
+        variant.quantity = available - item.quantity;
       }
 
-      if (!itemColor) {
-        itemColor = "Standard";
-      }
-
-      totalCents += priceCents * item.quantity;
+      product.stock -= item.quantity;
+      subtotalCents += priceCents * item.quantity;
       orderItems.push({
-        productId: item.product_id,
+        productId: product.id,
         quantity: item.quantity,
-        price: (priceCents / 100).toFixed(2),
-        color: itemColor,
-        color_image: itemColorImage || product.image || null,
+        price: fromCents(priceCents),
+        color: colorName,
+        colorImage: colorImage || product.image || null,
       });
     }
 
-    if (!Number.isSafeInteger(totalCents)) {
-      throw new Error("Calculated order total is outside the supported range");
+    // Coupon + shipping
+    let discountCents = 0;
+    let freeShipping = false;
+    let appliedCoupon = null;
+    if (coupon_code) {
+      const result = await evaluateCoupon(connection, coupon_code, subtotalCents, { lock: true });
+      if (result.error) {
+        await connection.rollback();
+        return res.status(400).json({ success: false, message: result.error });
+      }
+      discountCents = result.discountCents;
+      freeShipping = result.freeShipping;
+      appliedCoupon = result.coupon;
     }
+    const shippingCents = shippingCentsFor(subtotalCents, freeShipping);
+    const totalCents = Math.max(0, subtotalCents - discountCents) + shippingCents;
 
-    const isOnlinePayment = payment_method === "card" || payment_method === "wallet";
-    const paymentStatus = isOnlinePayment ? "Paid" : "Pending";
-    const orderStatus = isOnlinePayment ? "Processing" : "Pending";
+    // Payment (card and wallet are simulated in this demo store — no card data is stored)
+    const isOnline = payment_method === "card" || payment_method === "wallet";
+    const paymentStatus = isOnline ? "Paid" : "Pending";
+    const orderStatus = isOnline ? "Processing" : "Pending";
 
-    let resolvedMethod = "Cash on Delivery (COD)";
+    let methodLabel = "Cash on Delivery (COD)";
     if (payment_method === "card") {
-      resolvedMethod = `Credit/Debit Card (${payment_details?.cardBrand || "Card"})`;
+      methodLabel = `Credit/Debit Card (${clean(payment_details?.cardBrand, 30) || "Card"})`;
     } else if (payment_method === "wallet") {
-      resolvedMethod = `Mobile Wallet (${payment_details?.walletProvider || "JazzCash / EasyPaisa"})`;
-    } else if (payment_method && typeof payment_method === "string") {
-      resolvedMethod = payment_method;
+      methodLabel = `Mobile Wallet (${clean(payment_details?.walletProvider, 30) || "JazzCash / EasyPaisa"})`;
     }
 
-    const transactionId = isOnlinePayment
-      ? (payment_details?.transactionId || `TXN-${payment_method === "card" ? "CARD" : "WLT"}-${Date.now().toString().slice(-7)}`)
-      : `COD-${Date.now().toString().slice(-6)}`;
+    const stamp = Date.now().toString().slice(-7);
+    const transactionId = isOnline
+      ? clean(payment_details?.transactionId, 100) || `TXN-${payment_method === "card" ? "CARD" : "WLT"}-${stamp}`
+      : `COD-${stamp}`;
 
     const [orderResult] = await connection.query(
-      "INSERT INTO orders (user_id, total_amount, status, address, mobile_number, city, country, payment_method, payment_status, transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      `INSERT INTO orders (user_id, subtotal, shipping_fee, discount_amount, coupon_code, total_amount, status,
+         address, mobile_number, city, country, payment_method, payment_status, transaction_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.user.id,
-        (totalCents / 100).toFixed(2),
+        fromCents(subtotalCents),
+        fromCents(shippingCents),
+        fromCents(discountCents),
+        appliedCoupon ? appliedCoupon.code : null,
+        fromCents(totalCents),
         orderStatus,
-        address || null,
-        mobile_number || null,
-        city || null,
-        country || null,
-        resolvedMethod,
+        address,
+        mobile,
+        city,
+        country,
+        methodLabel,
         paymentStatus,
         transactionId,
       ]
@@ -177,139 +189,145 @@ router.post("/", verifyToken, async (req, res) => {
     for (const item of orderItems) {
       await connection.query(
         "INSERT INTO order_items (order_id, product_id, quantity, price, color, color_image) VALUES (?, ?, ?, ?, ?, ?)",
-        [orderId, item.productId, item.quantity, item.price, item.color, item.color_image]
-      );
-      await connection.query(
-        "UPDATE products SET stock = stock - ? WHERE id = ?",
-        [item.quantity, item.productId]
+        [orderId, item.productId, item.quantity, item.price, item.color, item.colorImage]
       );
     }
 
+    for (const product of productsById.values()) {
+      await connection.query("UPDATE products SET stock = ?, colors = ? WHERE id = ?", [
+        Math.max(0, product.stock),
+        product.colors.length > 0 ? JSON.stringify(product.colors) : null,
+        product.id,
+      ]);
+    }
+
+    if (appliedCoupon) {
+      await connection.query("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?", [appliedCoupon.id]);
+    }
+
+    await recordStatus(connection, orderId, "Pending", "Order placed");
+    if (orderStatus !== "Pending") {
+      await recordStatus(connection, orderId, orderStatus, "Payment confirmed");
+    }
+
     await connection.commit();
-    transactionStarted = false;
 
     return res.status(201).json({
       success: true,
       message: "Order placed successfully",
       orderId,
-      total_amount: (totalCents / 100).toFixed(2),
+      subtotal: fromCents(subtotalCents),
+      shipping_fee: fromCents(shippingCents),
+      discount_amount: fromCents(discountCents),
+      coupon_code: appliedCoupon ? appliedCoupon.code : null,
+      total_amount: fromCents(totalCents),
       status: orderStatus,
       payment_status: paymentStatus,
-      payment_method: resolvedMethod,
+      payment_method: methodLabel,
       transaction_id: transactionId,
     });
   } catch (error) {
-    if (connection && transactionStarted) {
-      await connection.rollback();
-    }
-    console.error("Checkout Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to process order",
-    });
-  } finally {
     if (connection) {
-      connection.release();
+      try {
+        await connection.rollback();
+      } catch {
+        // connection already closed
+      }
     }
+    console.error("Checkout error:", error);
+    return res.status(500).json({ success: false, message: "Failed to process order" });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
+/**
+ * GET /api/orders/my-orders — the signed-in customer's orders with items.
+ */
 router.get("/my-orders", verifyToken, async (req, res) => {
   try {
-    const [orders] = await db.query(
-      "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC",
-      [req.user.id]
-    );
-
-    // Fetch order items with colors and images for user profile
-    if (orders.length > 0) {
-      const orderIds = orders.map((o) => o.id);
-      const placeholders = orderIds.map(() => "?").join(",");
-      const [items] = await db.query(
-        `SELECT oi.*, p.name as product_name, COALESCE(oi.color_image, p.image) as product_image 
-         FROM order_items oi 
-         LEFT JOIN products p ON oi.product_id = p.id 
-         WHERE oi.order_id IN (${placeholders})`,
-        orderIds
-      );
-
-      const itemsByOrder = new Map();
-      items.forEach((item) => {
-        if (!itemsByOrder.has(item.order_id)) {
-          itemsByOrder.set(item.order_id, []);
-        }
-        itemsByOrder.get(item.order_id).push(item);
-      });
-
-      orders.forEach((order) => {
-        order.items = itemsByOrder.get(order.id) || [];
-      });
-    }
-
+    const orders = await loadOrdersWithItems("WHERE orders.user_id = ?", [req.user.id]);
     return res.json(orders);
   } catch (error) {
-    console.error("Order History Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while fetching orders",
-    });
+    console.error("Order history error:", error);
+    return res.status(500).json({ success: false, message: "Server error while fetching orders" });
   }
 });
 
-// Admin: Fetch all orders across all users with delivery details & items
-router.get("/all", verifyAdmin, async (req, res) => {
+/**
+ * GET /api/orders/track?orderId=12&email=you@example.com
+ * Public order tracking. Requires the email on the account that placed the
+ * order, and only returns non-sensitive details (no street address or phone).
+ */
+router.get("/track", async (req, res) => {
+  const orderId = Number(String(req.query.orderId || "").replace(/^#/, ""));
+  const email = String(req.query.email || "").trim().toLowerCase();
+
+  if (!Number.isSafeInteger(orderId) || orderId <= 0 || !email) {
+    return res.status(400).json({ success: false, message: "Order number and email are required" });
+  }
+
   try {
-    const [orders] = await db.query(
-      `SELECT orders.*, users.name as user_name, users.email as user_email 
-       FROM orders 
-       LEFT JOIN users ON orders.user_id = users.id 
-       ORDER BY orders.created_at DESC`
+    const [rows] = await db.query(
+      `SELECT o.id, o.status, o.payment_status, o.payment_method, o.total_amount, o.city, o.country,
+              o.created_at, o.updated_at, u.email
+       FROM orders o JOIN users u ON u.id = o.user_id
+       WHERE o.id = ? LIMIT 1`,
+      [orderId]
     );
 
-    // Fetch order items for all orders to display in admin modal
-    if (orders.length > 0) {
-      const orderIds = orders.map(o => o.id);
-      const placeholders = orderIds.map(() => "?").join(",");
-      const [items] = await db.query(
-        `SELECT oi.*, p.name as product_name, p.colors as product_colors, COALESCE(oi.color_image, p.image) as product_image 
-         FROM order_items oi 
-         LEFT JOIN products p ON oi.product_id = p.id 
-         WHERE oi.order_id IN (${placeholders})`,
-        orderIds
-      );
-
-      const itemsByOrder = new Map();
-      items.forEach((item) => {
-        if (!item.color) {
-          if (item.product_colors) {
-            try {
-              const parsed =
-                typeof item.product_colors === "string"
-                  ? JSON.parse(item.product_colors)
-                  : item.product_colors;
-              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].name) {
-                item.color = parsed[0].name;
-              }
-            } catch {
-              // ignore
-            }
-          }
-          if (!item.color) {
-            item.color = "Standard";
-          }
-        }
-
-        if (!itemsByOrder.has(item.order_id)) {
-          itemsByOrder.set(item.order_id, []);
-        }
-        itemsByOrder.get(item.order_id).push(item);
-      });
-
-      orders.forEach((order) => {
-        order.items = itemsByOrder.get(order.id) || [];
+    if (rows.length === 0 || rows[0].email.toLowerCase() !== email) {
+      return res.status(404).json({
+        success: false,
+        message: "We couldn't find an order with that number and email. Check both and try again.",
       });
     }
 
+    const order = rows[0];
+    const [history] = await db.query(
+      "SELECT status, note, created_at FROM order_status_history WHERE order_id = ? ORDER BY created_at ASC, id ASC",
+      [orderId]
+    );
+    const [items] = await db.query(
+      `SELECT oi.quantity, oi.color, COALESCE(oi.color_image, p.image) AS image, p.name
+       FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ?`,
+      [orderId]
+    );
+
+    return res.json({
+      success: true,
+      order: {
+        id: order.id,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paymentMethod: order.payment_method,
+        total: order.total_amount,
+        destination: [order.city, order.country].filter(Boolean).join(", "),
+        placedAt: order.created_at,
+        updatedAt: order.updated_at,
+        history: history.length > 0 ? history : [{ status: "Pending", note: "Order placed", created_at: order.created_at }],
+        items: items.map((item) => ({
+          name: item.name || "Removed product",
+          quantity: item.quantity,
+          color: item.color,
+          image: item.image,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Track order error:", error);
+    return res.status(500).json({ success: false, message: "Could not look up the order right now" });
+  }
+});
+
+/**
+ * Admin: list every order. Kept for the existing admin portal
+ * (the same data is also served at /api/admin/orders).
+ */
+router.get("/all", verifyAdmin, async (req, res) => {
+  try {
+    const orders = await loadOrdersWithItems();
     return res.json({ success: true, orders });
   } catch (error) {
     console.error("Fetch all orders error:", error);
@@ -317,65 +335,41 @@ router.get("/all", verifyAdmin, async (req, res) => {
   }
 });
 
-// Admin: Update order status
+/**
+ * Admin: update order status (validated, stock-aware, logged to history).
+ */
 router.patch("/:id/status", verifyAdmin, async (req, res) => {
+  const orderId = Number(req.params.id);
+  if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid order ID" });
+  }
   try {
-    const { status } = req.body;
-    await db.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
-    return res.json({ success: true, message: "Order status updated" });
+    const result = await changeOrderStatus(orderId, req.body?.status, { note: "Updated by admin" });
+    if (!result.ok) return res.status(result.code).json({ success: false, message: result.message });
+    return res.json({ success: true, message: "Order status updated", status: result.status });
   } catch (error) {
     console.error("Update status error:", error);
     return res.status(500).json({ success: false, message: "Failed to update status" });
   }
 });
 
-// User: Cancel an order (only if status is Pending)
+/**
+ * Customer: cancel a Pending order. The order is kept (status "Cancelled")
+ * so it stays in the customer's history, and its stock is restored.
+ */
 router.delete("/cancel/:id", verifyToken, async (req, res) => {
   const orderId = Number(req.params.id);
-
   if (!Number.isSafeInteger(orderId) || orderId <= 0) {
     return res.status(400).json({ success: false, message: "Invalid order ID" });
   }
-
   try {
-    const [rows] = await db.query(
-      "SELECT id, status, user_id FROM orders WHERE id = ?",
-      [orderId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Order not found" });
-    }
-
-    const order = rows[0];
-
-    if (order.user_id !== req.user.id) {
-      return res.status(403).json({ success: false, message: "You can only cancel your own orders" });
-    }
-
-    if (order.status !== "Pending") {
-      return res.status(403).json({
-        success: false,
-        message: `Order cannot be cancelled — it is already ${order.status}`,
-      });
-    }
-
-    // Restore stock for each cancelled item
-    const [items] = await db.query(
-      "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
-      [orderId]
-    );
-    for (const item of items) {
-      await db.query(
-        "UPDATE products SET stock = stock + ? WHERE id = ?",
-        [item.quantity, item.product_id]
-      );
-    }
-
-    await db.query("DELETE FROM order_items WHERE order_id = ?", [orderId]);
-    await db.query("DELETE FROM orders WHERE id = ?", [orderId]);
-
-    return res.json({ success: true, message: "Order cancelled successfully" });
+    const result = await changeOrderStatus(orderId, "Cancelled", {
+      note: "Cancelled by customer",
+      onlyIfStatus: "Pending",
+      userId: req.user.id,
+    });
+    if (!result.ok) return res.status(result.code).json({ success: false, message: result.message });
+    return res.json({ success: true, message: "Order cancelled successfully", status: "Cancelled" });
   } catch (error) {
     console.error("Cancel order error:", error);
     return res.status(500).json({ success: false, message: "Failed to cancel order" });

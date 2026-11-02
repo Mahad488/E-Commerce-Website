@@ -18,6 +18,10 @@ export interface InvoiceData {
   id: number;
   created_at?: string;
   total_amount: string | number;
+  subtotal?: string | number;
+  shipping_fee?: string | number;
+  discount_amount?: string | number;
+  coupon_code?: string | null;
   status?: string;
   address?: string;
   mobile_number?: string;
@@ -48,10 +52,11 @@ interface OrderInvoiceModalProps {
 
 export default function OrderInvoiceModal({ order, onClose }: OrderInvoiceModalProps) {
   const [copied, setCopied] = useState(false);
+  const [openedAt] = useState(() => Date.now());
 
   if (!order) return null;
 
-  const invoiceNumber = `INV-${new Date(order.created_at || Date.now()).getFullYear()}-${String(
+  const invoiceNumber = `INV-${new Date(order.created_at || openedAt).getFullYear()}-${String(
     order.id
   ).padStart(5, "0")}`;
 
@@ -63,7 +68,7 @@ export default function OrderInvoiceModal({ order, onClose }: OrderInvoiceModalP
         hour: "2-digit",
         minute: "2-digit",
       })
-    : new Date().toLocaleString("en-US", {
+    : new Date(openedAt).toLocaleString("en-US", {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -81,6 +86,10 @@ export default function OrderInvoiceModal({ order, onClose }: OrderInvoiceModalP
         order.payment_method.toLowerCase().includes("easypaisa")));
 
   const totalNum = Number(order.total_amount) || 0;
+  const itemsSum = (order.items || []).reduce((sum, it) => sum + (Number(it.price) || 0) * (it.quantity || 1), 0);
+  const subtotalNum = Number(order.subtotal) || itemsSum || totalNum;
+  const shippingNum = Number(order.shipping_fee) || 0;
+  const discountNum = Number(order.discount_amount) || 0;
 
   const handlePrint = () => {
     window.print();
@@ -384,11 +393,21 @@ export default function OrderInvoiceModal({ order, onClose }: OrderInvoiceModalP
             <div className="w-full sm:w-64 space-y-2 text-xs bg-gray-50 p-4 rounded-2xl border border-gray-200/80">
               <div className="flex justify-between text-gray-600">
                 <span>Items Subtotal:</span>
-                <span className="font-semibold text-gray-900">${totalNum.toFixed(2)}</span>
+                <span className="font-semibold text-gray-900">${subtotalNum.toFixed(2)}</span>
               </div>
+              {discountNum > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Discount{order.coupon_code ? ` (${order.coupon_code})` : ""}:</span>
+                  <span className="font-semibold">−${discountNum.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-600">
                 <span>Shipping & Handling:</span>
-                <span className="font-bold text-emerald-600">FREE ($0.00)</span>
+                {shippingNum > 0 ? (
+                  <span className="font-semibold text-gray-900">${shippingNum.toFixed(2)}</span>
+                ) : (
+                  <span className="font-bold text-emerald-600">FREE ($0.00)</span>
+                )}
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Sales Tax / VAT (0%):</span>

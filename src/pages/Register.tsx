@@ -1,5 +1,5 @@
 import { useState, type FormEvent, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Eye,
   EyeOff,
@@ -18,9 +18,11 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { API_BASE_URL } from "../config/api";
+import { DEMO_CREDENTIALS, getRedirectTarget, loginRequest } from "../lib/auth";
 
 export default function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setSession } = useAuth();
   const { showToast } = useToast();
 
@@ -120,28 +122,32 @@ export default function Register() {
 
       setSession(data.user, data.token);
       showToast(`Welcome to NOVA, ${data.user.name}! 🎉`, "success");
-      navigate("/account");
+      navigate(getRedirectTarget(location), { replace: true });
     } catch (error) {
       console.warn("Backend register connection error:", error);
-      setApiError(
-        "Unable to connect to registration server. If running locally without MySQL, click below to test with a guest session."
-      );
+      setApiError("Can't reach the server. Make sure the backend is running (cd backend && npm run dev).");
     } finally {
       setLoading(false);
     }
   };
 
-  // Quick 1-click Demo Registration
-  const handleQuickDemo = () => {
-    const demoUser = {
-      id: 888,
-      name: name.trim() || "Jordan Lee",
-      email: email.trim() || "jordan.shopper@novastore.com",
-    };
-    const demoToken = "demo-jwt-token-registered";
-    setSession(demoUser, demoToken);
-    showToast("Account activated in Demo Mode! 🚀", "success");
-    navigate("/account");
+  // Skip sign-up and explore with the seeded demo shopper (a real account).
+  const handleQuickDemo = async () => {
+    setApiError("");
+    setLoading(true);
+    const result = await loginRequest(DEMO_CREDENTIALS.email, DEMO_CREDENTIALS.password);
+    setLoading(false);
+    if (!result.ok || !result.user || !result.token) {
+      setApiError(
+        result.network
+          ? result.message || "Can't reach the server."
+          : "The demo account isn't set up yet. Run `npm run db:setup` in the backend folder."
+      );
+      return;
+    }
+    setSession(result.user, result.token);
+    showToast("Signed in as the demo shopper ✨", "success");
+    navigate(getRedirectTarget(location), { replace: true });
   };
 
   return (
@@ -245,6 +251,7 @@ export default function Register() {
                 Already registered?{" "}
                 <Link
                   to="/login"
+                  state={location.state}
                   className="font-bold text-orange-600 hover:text-orange-700 hover:underline transition"
                 >
                   Sign in here
@@ -587,7 +594,7 @@ export default function Register() {
                   className="w-full bg-orange-50 hover:bg-orange-100 border border-orange-200/80 text-orange-800 text-xs font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2"
                 >
                   <Sparkles size={14} className="text-orange-600" />
-                  <span>One-Click Guest Demo Registration</span>
+                  <span>Just looking? Use the demo account instead</span>
                 </button>
               </div>
             </form>
@@ -595,7 +602,7 @@ export default function Register() {
 
           {/* Footer note */}
           <div className="mt-6 pt-3 border-t border-gray-100 text-center text-xs text-gray-400">
-            Protected by reCAPTCHA and subject to the NOVA Security Standards.
+            Passwords are hashed with bcrypt and never stored in plain text.
           </div>
         </div>
 

@@ -20,10 +20,13 @@ import {
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import OrderInvoiceModal from "../components/OrderInvoiceModal";
+import CouponBox from "../components/CouponBox";
 
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { useCurrency } from "../context/CurrencyContext";
+import { getImageUrl, imageFallbackHandler } from "../lib/catalog";
 import { API_BASE_URL } from "../config/api";
 
 const COUNTRIES = [
@@ -56,15 +59,17 @@ const COUNTRIES = [
 ];
 
 function Checkout() {
-  const { items, subtotal, shipping, total, clearCart } = useCart();
+  const { items, subtotal, discount, shipping, total, coupon, clearCart } = useCart();
+  const { currentCurrency, formatPrice } = useCurrency();
   const { user, token, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const [address, setAddress] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [city, setCity] = useState("");
-  const [country, setCountry] = useState("Pakistan");
+  // Pre-filled from the saved profile; refreshed from the API below.
+  const [address, setAddress] = useState(user?.address || "");
+  const [mobileNumber, setMobileNumber] = useState(user?.phone || "");
+  const [city, setCity] = useState(user?.city || "");
+  const [country, setCountry] = useState(user?.country || "Pakistan");
   const [paymentMethod, setPaymentMethod] = useState("cod");
 
   const [loading, setLoading] = useState(false);
@@ -72,6 +77,10 @@ function Checkout() {
   const [orderSuccess, setOrderSuccess] = useState<{
     id: number;
     total: string;
+    subtotal?: string;
+    shippingFee?: string;
+    discount?: string;
+    couponCode?: string | null;
     address: string;
     mobile: string;
     payment: string;
@@ -89,14 +98,14 @@ function Checkout() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
   // Card Payment Form States
-  const [cardHolder, setCardHolder] = useState("");
+  const [cardHolder, setCardHolder] = useState(user?.name || "");
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvc, setCardCvc] = useState("");
 
   // Mobile Wallet States (JazzCash / EasyPaisa)
   const [walletProvider, setWalletProvider] = useState<"JazzCash" | "EasyPaisa">("JazzCash");
-  const [walletMobile, setWalletMobile] = useState("");
+  const [walletMobile, setWalletMobile] = useState(user?.phone || "");
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpValue, setOtpValue] = useState("");
   const [otpCountdown, setOtpCountdown] = useState(59);
@@ -105,26 +114,10 @@ function Checkout() {
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
-      navigate("/login");
+      navigate("/login", { replace: true, state: { from: "/checkout" } });
     }
   }, [isAuthenticated, token, navigate]);
 
-  // Auto-fill shipping address & phone from saved user profile
-  useEffect(() => {
-    if (user) {
-      if (user.address && !address) setAddress(user.address);
-      if (user.phone && !mobileNumber) setMobileNumber(user.phone);
-      if (user.city && !city) setCity(user.city);
-      if (user.country && country === "Pakistan") setCountry(user.country);
-      if (user.name && !cardHolder) setCardHolder(user.name);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (mobileNumber && !walletMobile) {
-      setWalletMobile(mobileNumber);
-    }
-  }, [mobileNumber]);
 
   useEffect(() => {
     if (token) {
@@ -135,7 +128,10 @@ function Checkout() {
         .then((data) => {
           if (data.success && data.user) {
             if (data.user.address) setAddress((prev) => prev || data.user.address);
-            if (data.user.phone) setMobileNumber((prev) => prev || data.user.phone);
+            if (data.user.phone) {
+              setMobileNumber((prev) => prev || data.user.phone);
+              setWalletMobile((prev) => prev || data.user.phone);
+            }
             if (data.user.city) setCity((prev) => prev || data.user.city);
             if (data.user.country) setCountry((prev) => (prev === "Pakistan" && data.user.country ? data.user.country : prev));
             if (data.user.name) setCardHolder((prev) => prev || data.user.name);
@@ -147,7 +143,7 @@ function Checkout() {
 
   // OTP Countdown Timer
   useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setInterval> | undefined;
     if (showOtpModal && otpCountdown > 0) {
       timer = setInterval(() => {
         setOtpCountdown((c) => c - 1);
@@ -186,7 +182,7 @@ function Checkout() {
   };
 
   // Execution function for placing orders in database
-  const executeOrderPlacement = async (selectedMethod: string, paymentDetails?: any) => {
+  const executeOrderPlacement = async (selectedMethod: string, paymentDetails?: Record<string, string> | null) => {
     try {
       setLoading(true);
       setError("");
@@ -204,6 +200,7 @@ function Checkout() {
         country: country.trim(),
         payment_method: selectedMethod,
         payment_details: paymentDetails || null,
+        coupon_code: coupon && subtotal >= coupon.minOrder ? coupon.code : null,
       };
 
       const response = await fetch(`${API_BASE_URL}/api/orders`, {
@@ -217,6 +214,9 @@ function Checkout() {
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        throw new Error("Your session has expired. Please sign in again to place the order.");
+      }
       if (!response.ok) {
         throw new Error(data.message || "Failed to process order.");
       }
@@ -224,6 +224,10 @@ function Checkout() {
       setOrderSuccess({
         id: data.orderId,
         total: data.total_amount || total.toFixed(2),
+        subtotal: data.subtotal,
+        shippingFee: data.shipping_fee,
+        discount: data.discount_amount,
+        couponCode: data.coupon_code,
         address: `${address.trim()}, ${city.trim()}, ${country.trim()}`,
         mobile: mobileNumber.trim(),
         payment: data.payment_method || (
@@ -246,9 +250,14 @@ function Checkout() {
 
       clearCart();
       showToast("Order placed successfully! 🎉", "success");
-    } catch (err: any) {
+    } catch (caught) {
+      const err = caught as Error;
       console.error("Checkout page error:", err);
-      setError(err.message || "An error occurred while placing your order.");
+      setError(
+        err.message === "Failed to fetch"
+          ? "Can't reach the server. Make sure the backend is running, then try again."
+          : err.message || "An error occurred while placing your order."
+      );
     } finally {
       setLoading(false);
     }
@@ -371,9 +380,30 @@ function Checkout() {
             </div>
 
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-500">Total Amount Paid</span>
-              <span className="font-bold text-lg text-orange-500">
-                ${orderSuccess.total}
+              <span className="text-gray-500">
+                {orderSuccess.paymentStatus === "Paid" ? "Total Paid" : "Total Due on Delivery"}
+              </span>
+              <span className="text-right">
+                <span className="font-bold text-lg text-orange-500 block">
+                  {formatPrice(Number(orderSuccess.total))}
+                </span>
+                {currentCurrency.code !== "USD" && (
+                  <span className="text-[11px] text-gray-400">${orderSuccess.total} USD</span>
+                )}
+              </span>
+            </div>
+
+            {Number(orderSuccess.discount) > 0 && (
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500">Coupon {orderSuccess.couponCode}</span>
+                <span className="font-bold text-emerald-600">−{formatPrice(Number(orderSuccess.discount))}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-500">Shipping</span>
+              <span className="font-bold text-gray-800">
+                {Number(orderSuccess.shippingFee) > 0 ? formatPrice(Number(orderSuccess.shippingFee)) : "FREE"}
               </span>
             </div>
 
@@ -454,7 +484,7 @@ function Checkout() {
                         </div>
                       </div>
                       <span className="font-bold text-gray-900">
-                        ${(it.price * it.quantity).toFixed(2)}
+                        {formatPrice(it.price * it.quantity)}
                       </span>
                     </div>
                   ))}
@@ -464,6 +494,12 @@ function Checkout() {
           </div>
 
           <div className="flex flex-wrap gap-4 justify-center mt-10">
+            <Link
+              to={`/track-order?orderId=${orderSuccess.id}&email=${encodeURIComponent(user?.email || "")}`}
+              className="border border-gray-300 bg-white px-8 py-4 rounded-full hover:bg-gray-100 transition font-semibold"
+            >
+              Track this order
+            </Link>
             <button
               onClick={() => setShowInvoiceModal(true)}
               className="bg-orange-500 text-white px-8 py-4 rounded-full hover:bg-orange-600 transition font-semibold flex items-center justify-center gap-2 shadow-lg shadow-orange-500/25 cursor-pointer"
@@ -492,6 +528,10 @@ function Checkout() {
             order={{
               id: orderSuccess.id,
               total_amount: orderSuccess.total,
+              subtotal: orderSuccess.subtotal,
+              shipping_fee: orderSuccess.shippingFee,
+              discount_amount: orderSuccess.discount,
+              coupon_code: orderSuccess.couponCode,
               status: orderSuccess.paymentStatus === "Paid" ? "Processing" : "Pending",
               payment_method: orderSuccess.payment,
               payment_status: orderSuccess.paymentStatus,
@@ -728,6 +768,11 @@ function Checkout() {
                         </span>
                       </div>
 
+                      <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                        <strong>Demo store:</strong> card payments are simulated and nothing is charged. Use a test
+                        number such as <span className="font-mono">4242 4242 4242 4242</span> — never a real card.
+                      </p>
+
                       {/* Visual Mock Credit Card Widget */}
                       <div className="relative w-full max-w-sm mx-auto h-44 rounded-2xl bg-gradient-to-tr from-neutral-900 via-gray-800 to-stone-900 text-white p-5 shadow-xl flex flex-col justify-between overflow-hidden border border-white/10">
                         <div className="absolute top-0 right-0 w-36 h-36 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -959,7 +1004,8 @@ function Checkout() {
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={item.selectedColorImage || item.product.image}
+                            src={getImageUrl(item.selectedColorImage || item.product.image, item.product.category)}
+                            onError={imageFallbackHandler(item.product.category)}
                             alt={item.product.name}
                             className="w-14 h-14 object-cover rounded-xl bg-gray-100 border shrink-0"
                           />
@@ -973,38 +1019,48 @@ function Checkout() {
                               </p>
                             )}
                             <p className="text-xs text-gray-500">
-                              Qty: {item.quantity} × ${item.product.price.toFixed(2)}
+                              Qty: {item.quantity} × {formatPrice(item.product.price)}
                             </p>
                           </div>
                         </div>
                         <span className="font-bold text-sm">
-                          ${(item.product.price * item.quantity).toFixed(2)}
+                          {formatPrice(item.product.price * item.quantity)}
                         </span>
                       </div>
                     ))}
                   </div>
 
+                  <div className="mb-5">
+                    <CouponBox />
+                  </div>
+
                   <div className="border-t pt-4 space-y-3 text-sm">
                     <div className="flex justify-between text-gray-600">
                       <span>Subtotal</span>
-                      <span className="font-semibold text-gray-900">
-                        ${subtotal.toFixed(2)}
-                      </span>
+                      <span className="font-semibold text-gray-900">{formatPrice(subtotal)}</span>
                     </div>
+
+                    {discount > 0 && (
+                      <div className="flex justify-between text-emerald-700">
+                        <span>Discount ({coupon?.code})</span>
+                        <span className="font-semibold">−{formatPrice(discount)}</span>
+                      </div>
+                    )}
 
                     <div className="flex justify-between text-gray-600">
                       <span>Shipping Fee</span>
                       <span className="font-semibold text-gray-900">
-                        {shipping === 0 ? "FREE" : `$${shipping.toFixed(2)}`}
+                        {shipping === 0 ? "FREE" : formatPrice(shipping)}
                       </span>
                     </div>
 
                     <div className="border-t pt-3 flex justify-between text-xl font-black">
                       <span>Total Amount</span>
-                      <span className="text-orange-500">
-                        ${total.toFixed(2)}
-                      </span>
+                      <span className="text-orange-500">{formatPrice(total)}</span>
                     </div>
+                    {currentCurrency.code !== "USD" && (
+                      <p className="text-[11px] text-gray-400 text-right">Charged as ${total.toFixed(2)} USD</p>
+                    )}
                   </div>
 
                   <button
@@ -1018,11 +1074,11 @@ function Checkout() {
                         Processing Payment...
                       </>
                     ) : paymentMethod === "card" ? (
-                      `Pay $${total.toFixed(2)} with Card`
+                      `Pay ${formatPrice(total)} with Card`
                     ) : paymentMethod === "wallet" ? (
-                      `Authorize $${total.toFixed(2)} via ${walletProvider}`
+                      `Authorize ${formatPrice(total)} via ${walletProvider}`
                     ) : (
-                      `Place Cash on Delivery Order ($${total.toFixed(2)})`
+                      `Place Cash on Delivery Order (${formatPrice(total)})`
                     )}
                   </button>
 
@@ -1065,7 +1121,7 @@ function Checkout() {
               </h3>
               <p className="text-xs text-gray-500 max-w-xs mx-auto">
                 Enter your 4-digit mobile transaction MPIN / OTP to authorize payment of{" "}
-                <strong className="text-gray-900">${total.toFixed(2)}</strong> on account{" "}
+                <strong className="text-gray-900">{formatPrice(total)}</strong> on account{" "}
                 <span className="font-mono font-bold text-gray-800">{walletMobile}</span>.
               </p>
             </div>
@@ -1118,7 +1174,7 @@ function Checkout() {
                     <span>Verifying with {walletProvider}...</span>
                   </>
                 ) : (
-                  `Authorize & Pay $${total.toFixed(2)}`
+                  `Authorize & Pay ${formatPrice(total)}`
                 )}
               </button>
 

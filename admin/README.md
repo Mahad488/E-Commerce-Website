@@ -30,7 +30,7 @@ npm run dev:admin
 
 - **Username**: `nova_admin`
 - **Password**: `Nova@Admin#2024`
-- **1-Click Demo Access**: Click "Use Demo Admin Credentials" on the login screen to enter immediately.
+- These are created automatically on first run (from `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `backend/.env`). Change the password from **Security & Password** after your first login.
 
 ---
 
@@ -46,8 +46,9 @@ admin/
 │   ├── vite.config.ts            # Vite server running on port 5174
 │   ├── package.json              # Standalone frontend scripts
 │   ├── tsconfig.json             # TypeScript configuration
-│   ├── Admin.tsx                 # Full Admin Dashboard (Catalog, Orders, Analytics, Modals)
-│   ├── AdminLogin.tsx            # Secure Admin Authentication & Demo Access
+│   ├── Admin.tsx                 # Full Admin Dashboard (Overview, Orders, Catalog, Settings)
+│   ├── AdminAnalytics.tsx        # Overview tab: revenue chart, top products, low stock, inbox
+│   ├── AdminLogin.tsx            # Admin sign-in
 │   ├── AdminPortalData.tsx       # Admin Data Hub & Export utility
 │   ├── index.ts                  # Barrel export
 │   └── src/
@@ -59,7 +60,7 @@ admin/
     ├── adminAuth.js              # Admin Login logic & verifyAdmin JWT middleware
     ├── adminOrders.js            # Orders list & status transition endpoints
     ├── adminProducts.js          # Products create, update, delete endpoints
-    ├── adminStats.js             # Overview stats (revenue, order counts, status breakdown)
+    ├── adminStats.js             # Dashboard analytics (revenue by day, top products, low stock, inbox)
     └── index.js                  # Unified router & middleware export
 ```
 
@@ -74,4 +75,6 @@ Mounted under `/api/admin`:
 - `POST /api/admin/products`
 - `PUT /api/admin/products/:id`
 - `DELETE /api/admin/products/:id`
-- `GET /api/admin/stats`
+- `GET /api/admin/stats?days=14` — revenue by day, totals, top products, category revenue, low stock, recent contact messages
+- `PATCH /api/admin/stats/messages/:id/read` — mark a contact message as read
+- `GET /api/admin/profile` · `PUT /api/admin/change-password`

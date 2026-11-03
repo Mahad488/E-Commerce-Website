@@ -1,86 +1,68 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Shirt,
-  Smartphone,
-  Watch,
-  ShoppingBag,
-  Footprints,
-  Gamepad2,
-  ArrowRight,
-  Sparkles,
-  Layers,
-} from "lucide-react";
+import { useScroll } from "motion/react";
 
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ProductCard from "../components/ProductCard";
-
+import { Skeleton } from "../components/Skeleton";
+import { SPARK_PATH } from "../components/Wordmark";
+import { NovaGlow, NovaStars } from "../components/motion/NovaGlow";
+import PhotoFan, { type FanPhoto } from "../components/motion/PhotoFan";
+import { Stagger, StaggerItem } from "../components/motion/Stagger";
 import type { Product } from "../data/products";
-import { fetchCatalog } from "../lib/catalog";
 import { useCurrency } from "../context/CurrencyContext";
+import { discountPercent, fetchCatalog, getImageUrl, STORE_CATEGORIES } from "../lib/catalog";
 
-const CATEGORY_LIST = [
-  {
-    name: "Fashion",
-    icon: Shirt,
-    image: "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=800&q=80",
-    badge: "Popular",
-    badgeBg: "bg-pink-500",
-    description: "Discover stylish casual jackets, t-shirts, sneakers, and modern clothing.",
-  },
-  {
-    name: "Electronics",
-    icon: Smartphone,
-    image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80",
-    badge: "Best Seller",
-    badgeBg: "bg-blue-500",
-    description: "High-fidelity headphones, smartwatches, keyboards & wireless devices.",
-  },
-  {
-    name: "Accessories",
-    icon: Watch,
-    image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80",
-    badge: "Trending",
-    badgeBg: "bg-amber-500",
-    description: "Minimal wristwatches, classic sunglasses, and genuine leather items.",
-  },
-  {
-    name: "Lifestyle",
-    icon: ShoppingBag,
-    image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=800&q=80",
-    badge: "New",
-    badgeBg: "bg-emerald-500",
-    description: "Premium backpacks, travel accessories, mugs, and daily essentials.",
-  },
-  {
-    name: "Footwear",
-    icon: Footprints,
-    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80",
-    badge: "Hot Deals",
-    badgeBg: "bg-purple-500",
-    description: "Lightweight running sneakers, casual shoes, and active footwear.",
-  },
-  {
-    name: "Gaming & Tech",
-    icon: Gamepad2,
-    image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=800&q=80",
-    badge: "Featured",
-    badgeBg: "bg-indigo-500",
-    description: "RGB mechanical keyboards, fitness bands, and high-performance gear.",
-  },
-];
+interface CategorySummary {
+  name: string;
+  count: number;
+  minPrice: number;
+  maxOff: number;
+  photos: FanPhoto[];
+}
 
-function CategoriesPage() {
+/** Fan cards are small, so ask Unsplash for a 400px image instead of the 800px original. */
+const fanImage = (url: string) => (url.includes("images.unsplash.com") ? url.replace(/([?&])w=\d+/, "$1w=400") : url);
+
+const toPhoto = (p: Product): FanPhoto => ({ src: fanImage(getImageUrl(p.image, p.category)), alt: p.name, category: p.category });
+
+/** Best-looking first: in stock, then highest rated, then biggest discount. */
+const showcaseOrder = (a: Product, b: Product) =>
+  Number(b.stock > 0) - Number(a.stock > 0) || b.rating - a.rating || discountPercent(b) - discountPercent(a);
+
+function summarise(products: Product[]) {
+  const names = [...STORE_CATEGORIES, ...new Set(products.map((p) => p.category))].filter((n, i, all) => all.indexOf(n) === i);
+  const summaries: CategorySummary[] = [];
+  const comingSoon: string[] = [];
+  for (const name of names) {
+    const items = products.filter((p) => p.category === name);
+    if (items.length === 0) {
+      comingSoon.push(name);
+      continue;
+    }
+    summaries.push({
+      name,
+      count: items.length,
+      minPrice: Math.min(...items.map((p) => p.price)),
+      maxOff: Math.max(0, ...items.map(discountPercent)),
+      photos: [...items].sort(showcaseOrder).slice(0, 3).map(toPhoto),
+    });
+  }
+  return { summaries, comingSoon };
+}
+
+export default function CategoriesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const { formatPrice } = useCurrency();
+  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
     let active = true;
-    fetchCatalog().then(({ products: list }) => {
+    fetchCatalog().then(({ products: list, offline: isOffline }) => {
       if (!active) return;
       setProducts(list);
+      setOffline(isOffline);
       setLoading(false);
     });
     return () => {
@@ -88,15 +70,12 @@ function CategoriesPage() {
     };
   }, []);
 
-  const stats = useMemo(() => {
-    const map: Record<string, { count: number; minPrice: number }> = {};
-    for (const p of products) {
-      const entry = (map[p.category] ||= { count: 0, minPrice: Infinity });
-      entry.count += 1;
-      entry.minPrice = Math.min(entry.minPrice, p.price);
-    }
-    return map;
-  }, [products]);
+  const { summaries, comingSoon } = useMemo(() => summarise(products), [products]);
+
+  const deals = useMemo(
+    () => products.filter((p) => p.stock > 0 && discountPercent(p) > 0).sort((a, b) => discountPercent(b) - discountPercent(a)),
+    [products]
+  );
 
   const bestSellers = useMemo(
     () => [...products].sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0) || b.rating - a.rating).slice(0, 4),
@@ -104,141 +83,55 @@ function CategoriesPage() {
   );
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-porcelain">
       <Navbar />
 
-      {/* Hero Header */}
-      <section className="bg-[#f5f2ed] py-16 border-b">
-        <div className="max-w-7xl mx-auto px-5 lg:px-8 text-center">
-          <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest mb-4">
-            <Layers size={15} />
-            Category Catalog
-          </div>
+      <header className="wrap pt-8 lg:pt-14">
+        <h1 className="type-display-l">Shop by category</h1>
+        <p className="mt-3 max-w-2xl text-muted">
+          {loading ? "Counting what's in stock…" : `${products.length} products across ${summaries.length} categories. Pick one to see everything in it.`}
+        </p>
+        {offline && <p className="mt-2 text-sm text-warning">Showing the offline demo catalogue because the API isn't reachable.</p>}
+      </header>
 
-          <h1 className="text-4xl md:text-6xl font-black text-gray-900 tracking-tight">
-            Explore All Categories
-          </h1>
-
-          <p className="text-gray-600 mt-4 max-w-2xl mx-auto text-base md:text-lg">
-            Browse our complete range of product categories crafted to elevate your daily lifestyle.
-          </p>
-        </div>
-      </section>
-
-      {/* Main Categories Section */}
-      <main className="max-w-7xl mx-auto px-5 lg:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {CATEGORY_LIST.map((cat) => {
-            const Icon = cat.icon;
-
-            return (
-              <div
-                key={cat.name}
-                className="group bg-white border border-gray-100 rounded-3xl overflow-hidden hover:shadow-2xl hover:-translate-y-2 transition duration-300 flex flex-col justify-between"
-              >
-                {/* Image Banner */}
-                <div className="relative h-56 overflow-hidden">
-                  <img
-                    src={cat.image}
-                    alt={cat.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-
-                  <span
-                    className={`absolute top-4 right-4 ${cat.badgeBg} text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow`}
-                  >
-                    {cat.badge}
-                  </span>
-
-                  <div className="absolute bottom-4 left-4 right-4 text-white flex items-center gap-3">
-                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                      <Icon size={24} />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold">{cat.name}</h3>
-                      <p className="text-xs text-gray-200">
-                        {stats[cat.name]
-                          ? `${stats[cat.name].count} ${stats[cat.name].count === 1 ? "product" : "products"} · from ${formatPrice(stats[cat.name].minPrice)}`
-                          : loading
-                          ? "Loading…"
-                          : "Coming soon"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Content */}
-                <div className="p-6 flex-1 flex flex-col justify-between">
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    {cat.description}
-                  </p>
-
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <Link
-                      to={`/products?category=${encodeURIComponent(cat.name)}`}
-                      className="w-full inline-flex items-center justify-center gap-2 bg-black text-white py-3.5 rounded-2xl font-semibold text-sm hover:bg-orange-500 transition shadow"
-                    >
-                      Browse {cat.name} Products
-                      <ArrowRight size={16} />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Live Category Showcase */}
-        {!loading && products.length > 0 && (
-          <section className="mt-20 pt-16 border-t">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10">
-              <div>
-                <span className="text-orange-500 text-xs font-bold uppercase tracking-widest">
-                  Live Catalog Preview
-                </span>
-                <h2 className="text-3xl font-black text-gray-900 mt-2">
-                  Best Sellers Across Categories
-                </h2>
-              </div>
-              <Link
-                to="/products"
-                className="text-sm font-bold text-orange-500 hover:underline mt-3 md:mt-0"
-              >
-                View Full Product Catalog →
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {bestSellers.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          </section>
+      <main className="wrap pb-16 pt-6 lg:pb-24 lg:pt-10">
+        {loading ? (
+          <CategoryIndexSkeleton />
+        ) : (
+          <Stagger className="border-t border-line">
+            {summaries.map((summary) => (
+              <StaggerItem key={summary.name}>
+                <CategoryRow summary={summary} />
+              </StaggerItem>
+            ))}
+          </Stagger>
         )}
 
-        {/* Promotional Banner */}
-        <section className="mt-20 bg-gradient-to-r from-orange-600 to-amber-500 rounded-3xl p-8 md:p-12 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="max-w-xl">
-            <div className="inline-flex items-center gap-2 bg-black/30 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
-              <Sparkles size={14} />
-              Exclusive Category Deals
-            </div>
-            <h2 className="text-3xl md:text-4xl font-black">
-              Unbeatable Prices On Top Categories
-            </h2>
-            <p className="text-orange-100 mt-3 text-sm md:text-base">
-              Shop our latest collection across Fashion, Electronics, and Accessories with fast express delivery.
-            </p>
-          </div>
+        {!loading && comingSoon.length > 0 && (
+          <p className="mt-6 text-sm text-muted">Coming soon: {new Intl.ListFormat("en", { type: "conjunction" }).format(comingSoon)}.</p>
+        )}
 
-          <Link
-            to="/products?sale=true"
-            className="bg-white text-black px-8 py-4 rounded-full font-bold text-base hover:bg-black hover:text-white transition shadow-lg shrink-0"
-          >
-            Explore All Deals
-          </Link>
-        </section>
+        {!loading && deals.length > 0 && <DealsPanel deals={deals} categoryCount={new Set(deals.map((d) => d.category)).size} />}
+
+        {!loading && bestSellers.length > 0 && (
+          <section className="mt-16 lg:mt-24" aria-labelledby="best-sellers">
+            <div className="mb-6 flex items-end justify-between gap-4">
+              <h2 id="best-sellers" className="type-h2">
+                Best sellers
+              </h2>
+              <Link to="/products?sort=popular" className="whitespace-nowrap font-semibold underline-offset-4 hover:underline">
+                See all ›
+              </Link>
+            </div>
+            <Stagger className="grid grid-cols-2 gap-x-3 gap-y-7 lg:grid-cols-4 lg:gap-x-6">
+              {bestSellers.map((product) => (
+                <StaggerItem key={product.id}>
+                  <ProductCard product={product} />
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </section>
+        )}
       </main>
 
       <Footer />
@@ -246,4 +139,133 @@ function CategoriesPage() {
   );
 }
 
-export default CategoriesPage;
+/** One line of the index: the category name in display type, real numbers, and a fan of its own products. */
+function CategoryRow({ summary }: { summary: CategorySummary }) {
+  const { formatPrice } = useCurrency();
+  const rowRef = useRef<HTMLAnchorElement>(null);
+  const [active, setActive] = useState(false);
+  // `settle`: the fan opens as the row scrolls up to the middle of the screen.
+  const { scrollYProgress } = useScroll({ target: rowRef, offset: ["start end", "center center"] });
+
+  return (
+    <Link
+      ref={rowRef}
+      to={`/products?category=${encodeURIComponent(summary.name)}`}
+      onPointerEnter={(e) => e.pointerType === "mouse" && setActive(true)}
+      onPointerLeave={() => setActive(false)}
+      onFocus={() => setActive(true)}
+      onBlur={() => setActive(false)}
+      aria-label={`${summary.name}: ${summary.count} ${summary.count === 1 ? "product" : "products"}, from ${formatPrice(summary.minPrice)}`}
+      className="group relative isolate grid grid-cols-[minmax(0,1fr)_128px] items-center gap-4 border-b border-line py-5 transition-transform duration-150 active:scale-[0.99] sm:grid-cols-[minmax(0,1fr)_240px] sm:py-7 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-10 lg:py-8"
+    >
+      {/* Hover band */}
+      <span
+        aria-hidden="true"
+        className={`absolute -inset-x-3 inset-y-1.5 -z-10 rounded-tile bg-surface transition-opacity duration-200 ease-nova-out lg:-inset-x-6 ${active ? "opacity-100" : "opacity-0"}`}
+      />
+
+      <div className="min-w-0">
+        <h2 className="type-display-l flex items-start gap-2 text-[clamp(1.75rem,3.2vw+0.9rem,3.5rem)]">
+          <span className={`transition-transform duration-300 ease-nova-out ${active ? "translate-x-1.5 lg:translate-x-3" : ""}`}>{summary.name}</span>
+          <RowSpark visible={active} />
+        </h2>
+        <p className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted lg:mt-4 lg:text-base">
+          <span>
+            {summary.count} {summary.count === 1 ? "product" : "products"}
+          </span>
+          <span>From {formatPrice(summary.minPrice)}</span>
+          {summary.maxOff > 0 && <span className="tag tag-deal">Up to {summary.maxOff}% off</span>}
+        </p>
+      </div>
+
+      <PhotoFan
+        photos={summary.photos}
+        spread={scrollYProgress}
+        active={active}
+        className="h-[132px] [--w:66px] sm:h-[190px] sm:[--w:108px] lg:mr-6 lg:h-[270px] lg:w-[460px] lg:justify-self-end lg:[--w:168px]"
+      />
+    </Link>
+  );
+}
+
+/** The nova spark that pops in beside a row's name on hover or keyboard focus. */
+function RowSpark({ visible }: { visible: boolean }) {
+  const id = `row-spark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={`mt-[0.08em] h-[0.42em] w-[0.42em] shrink-0 transition-[opacity,transform] duration-300 ease-nova-pop ${
+        visible ? "translate-x-1.5 rotate-90 scale-100 opacity-100 lg:translate-x-3" : "scale-50 opacity-0"
+      }`}
+    >
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#FF5CA8" />
+          <stop offset=".55" stopColor="#FFB21E" />
+          <stop offset="1" stopColor="#A58BFF" />
+        </linearGradient>
+      </defs>
+      <path d={SPARK_PATH} fill={`url(#${id})`} />
+    </svg>
+  );
+}
+
+/** Night brand panel: the real deal count, with the glow behind a fan of the best deals. */
+function DealsPanel({ deals, categoryCount }: { deals: Product[]; categoryCount: number }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [active, setActive] = useState(false);
+  const { scrollYProgress } = useScroll({ target: panelRef, offset: ["start end", "center center"] });
+  const maxOff = discountPercent(deals[0]);
+
+  return (
+    <section
+      ref={panelRef}
+      aria-labelledby="deals-title"
+      onPointerEnter={(e) => e.pointerType === "mouse" && setActive(true)}
+      onPointerLeave={() => setActive(false)}
+      className="on-night relative isolate mt-14 overflow-hidden rounded-sheet bg-night text-white lg:mt-20"
+    >
+      <NovaStars count={22} seed={7} />
+      <NovaGlow className="absolute bottom-[-180px] left-1/2 aspect-square w-[520px] -translate-x-1/2 lg:bottom-auto lg:left-auto lg:right-[-60px] lg:top-1/2 lg:w-[640px] lg:-translate-y-1/2 lg:translate-x-0" />
+
+      <div className="relative grid gap-8 px-6 pb-4 pt-10 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-6 lg:px-14 lg:py-14">
+        <div className="relative z-10">
+          <h2 id="deals-title" className="type-display-l">
+            Up to {maxOff}% off right now
+          </h2>
+          <p className="mt-3 max-w-[40ch] text-on-night-muted">
+            {deals.length} {deals.length === 1 ? "product is" : "products are"} on sale across {categoryCount}{" "}
+            {categoryCount === 1 ? "category" : "categories"}.
+          </p>
+          <Link to="/products?sale=true" className="btn btn-buy mt-6">
+            Shop deals
+          </Link>
+        </div>
+        <PhotoFan
+          photos={deals.slice(0, 4).map(toPhoto)}
+          spread={scrollYProgress}
+          active={active}
+          onNight
+          className="h-[230px] [--w:120px] sm:h-[280px] sm:[--w:150px] lg:h-[320px] lg:[--w:170px]"
+        />
+      </div>
+    </section>
+  );
+}
+
+function CategoryIndexSkeleton() {
+  return (
+    <div role="status" aria-label="Loading categories" className="border-t border-line">
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} className="grid grid-cols-[minmax(0,1fr)_128px] items-center gap-4 border-b border-line py-5 sm:grid-cols-[minmax(0,1fr)_240px] sm:py-7 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-10 lg:py-8">
+          <div className="grid gap-3">
+            <Skeleton className="h-9 w-3/4 lg:h-14" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+          <Skeleton className="mx-auto h-[100px] w-[80px] rounded-[14px] sm:h-[135px] sm:w-[108px] lg:mr-[152px] lg:h-[210px] lg:w-[168px] lg:justify-self-end lg:rounded-[18px]" />
+        </div>
+      ))}
+    </div>
+  );
+}

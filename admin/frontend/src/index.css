@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Same NOVA tokens as the storefront (docs/DESIGN.md). The calmer admin "workspace" styling comes in prompt 0B, group 8. */
+@import "../../../src/styles/tokens.css";
 
 /* Tailwind v4 made the default border colour `currentColor` (v3 used gray-200).
    The components here were written for the v3 default, so restore it. */
@@ -8,7 +10,7 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
+    border-color: var(--color-line, currentColor);
   }
 }
 
@@ -18,7 +20,6 @@
 
 body {
   margin: 0;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #faf9f6;
   color: #111111;
 }

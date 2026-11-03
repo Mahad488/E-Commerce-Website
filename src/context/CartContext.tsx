@@ -65,6 +65,8 @@ interface CartContextType {
   isCartOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
+  /** The line most recently added (product id + colour), so the mini cart can highlight it. */
+  lastAdded: { productId: number; selectedColor: string; at: number } | null;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -186,6 +188,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [couponError, setCouponError] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [lastAdded, setLastAdded] = useState<CartContextType["lastAdded"]>(null);
 
   useEffect(() => writeStorage("nova_cart", state.items), [state.items]);
   useEffect(() => writeStorage("nova_coupon", coupon), [coupon]);
@@ -207,6 +210,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         selectedColorImage: colorImage || product.image,
         quantity: Math.max(1, Math.floor(quantity)),
       });
+      setLastAdded({ productId: product.id, selectedColor: color || "Standard", at: Date.now() });
       setIsCartOpen(true);
     },
     []
@@ -289,7 +293,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const maxQuantityFor = useCallback((item: CartItem) => maxQuantity(item.product, item.selectedColor), []);
   const openCart = useCallback(() => setIsCartOpen(true), []);
-  const closeCart = useCallback(() => setIsCartOpen(false), []);
+  const closeCart = useCallback(() => {
+    setIsCartOpen(false);
+    setLastAdded(null);
+  }, []);
 
   return (
     <CartContext.Provider
@@ -312,6 +319,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         isCartOpen,
         openCart,
         closeCart,
+        lastAdded,
       }}
     >
       {children}

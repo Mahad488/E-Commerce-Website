@@ -12,14 +12,15 @@ A complete online store built with **React 19 + TypeScript + Vite + Tailwind CSS
 | **Home** | Hero, trust bar, live category counts, **flash-sale countdown** (deals reset at midnight), tabbed *New / Best sellers / Top rated*, real customer reviews, copy-to-clipboard coupon codes, recently viewed |
 | **Shop** | Search, category, **price range**, **min rating**, **in-stock only**, **on sale**, 7 sort options, filter chips, *Load more*. All filters live in the URL so views can be shared |
 | **Product page** | Colour variants with per-colour stock, **hover zoom**, quantity, **Buy it now**, delivery estimate, low-stock warnings, share link, **rating breakdown**, review sorting, **"Verified buyer"** badges, related products, recently viewed |
-| **Quick view** | Eye icon on every product card opens a modal to pick a colour and add to cart without leaving the page |
-| **Cart** | **Slide-out mini cart**, free-shipping progress bar, **coupon codes**, colour-variant stock limits |
+| **Quick view** | "Quick view" on every product card (desktop) opens a modal, or a drag-to-close bottom sheet on phones, to pick a colour and add to cart without leaving the page |
+| **Cart** | **Slide-out mini cart** with a free-delivery meter that celebrates at 100%, **coupon codes**, colour-variant stock limits |
 | **Checkout** | Saved address pre-filled, COD / card / JazzCash-EasyPaisa (card & wallet are *simulated*), coupon + shipping totals calculated by the server, printable invoice |
 | **Account** | Order history, cancel pending orders (stock is restored), detailed tracking link, profile & address book, change password |
 | **Track order** | Public tracking page (order # + email) with a timestamped status timeline |
 | **Help pages** | Contact form (saved to the DB), searchable FAQ / shipping & returns, About, Privacy, Terms, custom 404 |
 | **Multi-currency** | 19 currencies with a side drawer; prices convert everywhere, orders are charged in USD |
 | **Offline mode** | If the API isn't running, the catalogue and product pages fall back to a bundled demo catalogue |
+| **Design & motion** | NOVA's own design system ([docs/DESIGN.md](docs/DESIGN.md)): Mona Sans, a night-sky brand layer with a nova glow, and motion that answers the shopper. Add to cart flies the photo into the bag with a burst, hearts spark, prices and totals roll, drawers and sheets spring in with focus trapped, pages cross-fade. Everything respects *reduce motion* |
 
 ### Admin portal (`/admin`)
 - **Overview dashboard**: revenue/orders/AOV/customers, **daily revenue chart** (7/14/30 days, hover tooltips, table view), orders by status, top products, revenue by category, **low-stock alerts**, **contact inbox**
@@ -90,13 +91,39 @@ If your API isn't on `http://localhost:5000`, create a root `.env` with `VITE_AP
 
 ---
 
+## 🎨 Design system
+
+The look and motion rules live in **[docs/DESIGN.md](docs/DESIGN.md)**, with a clickable sketch in `docs/design-preview.html` (open it straight from the folder).
+
+- **Tokens** are Tailwind v4 theme values in `src/styles/tokens.css`, so they're ordinary utilities:
+  `bg-night`, `bg-porcelain`, `text-ink`, `text-muted`, `bg-flare` (buying only), `bg-marigold`, `bg-aurora`,
+  `rounded-tag / -control / -tile / -sheet`, `shadow-overlay`, `ease-nova-out`.
+- **Component classes** in `src/index.css`: `btn btn-buy | btn-primary | btn-secondary | btn-ghost | btn-danger`, `input`,
+  `tag tag-deal | tag-new | tag-best | tag-out`, `chip`, `icon-btn`, `well` (product image tile), `skeleton`,
+  `type-display-xl | type-display-l | type-h2 | type-h3 | type-price | type-code`. Wrap a dark section in `on-night`
+  and buttons, inputs and focus rings switch to their night versions.
+- **Motion** uses [`motion`](https://motion.dev) (`import { m } from "motion/react"`), loaded lazily through `LazyMotion`.
+  It's the only new dependency: it gives exit animations, springs, layout reflow and drag-to-dismiss, which would be a lot
+  of hand-written code. Reusable pieces are in `src/components/motion/`. To make anything fly into the bag:
+
+  ```tsx
+  const { fly } = useFlyToCart();
+  fly(imageElement, imageUrl).then(() => addToCart(product));
+  ```
+
+---
+
 ## 🗂 Project structure
 ```text
 ecommerce-website/
 ├── src/                      # Storefront (React)
-│   ├── components/           # Navbar, ProductCard, CartDrawer, QuickViewModal, FlashSale, …
+│   ├── components/           # Navbar, ProductCard, CartDrawer, QuickViewModal, Wordmark, EmptyState, Skeleton, …
+│   │   └── motion/           # MotionProvider, PageTransition, AnimatedNumber, Pressable, Reveal, Stagger,
+│   │                         # NovaGlow/NovaStars, FlyToCartProvider + useFlyToCart()
 │   ├── context/              # Auth, Cart (incl. coupons), Wishlist, Currency, Toast
-│   ├── lib/                  # catalog.ts (API + offline fallback), auth.ts, recentlyViewed.ts
+│   ├── lib/                  # catalog.ts (API + offline fallback), auth.ts, recentlyViewed.ts,
+│   │                         # motion.ts (timing tokens), flare.ts (bursts, confetti, fly), useFocusTrap, …
+│   ├── styles/tokens.css     # Design tokens as Tailwind v4 @theme (shared with the admin portal)
 │   ├── pages/                # Home, Products, ProductDetails, Cart, Checkout, Account, TrackOrder, …
 │   └── data/products.ts      # Offline demo catalogue (mirrors the seed)
 ├── admin/

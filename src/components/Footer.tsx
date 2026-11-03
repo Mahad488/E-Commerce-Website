@@ -1,33 +1,110 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { Mail, MessageCircle, Send, CheckCircle2, Copy, Check } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
+import { Check, CheckCircle2, ChevronDown, Copy } from "lucide-react";
 
 import { API_BASE_URL } from "../config/api";
+import { DUR, EASE } from "../lib/motion";
+import Wordmark from "./Wordmark";
 
-const SHOP_LINKS = [
-  { to: "/products", label: "All Products" },
-  { to: "/products?sale=true", label: "Deals & Sales" },
-  { to: "/categories", label: "Browse Categories" },
-  { to: "/products?sort=popular", label: "Best Sellers" },
-  { to: "/wishlist", label: "My Wishlist" },
-];
-
-const HELP_LINKS = [
-  { to: "/track-order", label: "Track Your Order" },
-  { to: "/faq", label: "Shipping & Returns" },
-  { to: "/faq", label: "FAQ" },
-  { to: "/contact", label: "Contact Support" },
-  { to: "/about", label: "About NOVA" },
+const GROUPS = [
+  {
+    title: "Shop",
+    links: [
+      { to: "/products", label: "Shop all" },
+      { to: "/products?sale=true", label: "Deals" },
+      { to: "/categories", label: "Categories" },
+      { to: "/products?sort=popular", label: "Best sellers" },
+      { to: "/wishlist", label: "Wishlist" },
+    ],
+  },
+  {
+    title: "Help",
+    links: [
+      { to: "/track-order", label: "Track an order" },
+      { to: "/faq", label: "Delivery and returns" },
+      { to: "/faq", label: "FAQ" },
+      { to: "/contact", label: "Contact us" },
+    ],
+  },
+  {
+    title: "NOVA",
+    links: [
+      { to: "/about", label: "About" },
+      { to: "/terms", label: "Terms" },
+      { to: "/privacy", label: "Privacy" },
+    ],
+  },
 ];
 
 export default function Footer() {
+  return (
+    <footer id="footer" className="on-night bg-night text-white">
+      <div className="wrap grid gap-10 pb-[calc(32px+env(safe-area-inset-bottom,0px))] pt-14 lg:grid-cols-[1.2fr_2fr] lg:gap-16 lg:pt-20">
+        <div className="grid content-start gap-5">
+          <Link to="/" aria-label="NOVA home" className="w-fit text-[1.75rem]">
+            <Wordmark />
+          </Link>
+          <p className="max-w-[38ch] text-sm text-on-night-muted">
+            Fashion, footwear, accessories, tech and lifestyle picks. Pay by card, wallet or cash on delivery.
+          </p>
+          <Newsletter />
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3 sm:gap-8">
+          {GROUPS.map((group) => (
+            <LinkGroup key={group.title} title={group.title} links={group.links} />
+          ))}
+        </div>
+      </div>
+
+      <div className="wrap flex flex-col gap-2 border-t border-white/10 py-6 text-xs text-on-night-muted sm:flex-row sm:items-center sm:justify-between">
+        <p>© {new Date().getFullYear()} NOVA Store</p>
+        <a href="mailto:support@novastore.com" className="hover:text-white">
+          support@novastore.com
+        </a>
+      </div>
+    </footer>
+  );
+}
+
+/** Always open from 640px up; a tap-to-open accordion on phones so the footer stays short. */
+function LinkGroup({ title, links }: { title: string; links: { to: string; label: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const id = `footer-${title.toLowerCase()}`;
+  return (
+    <div className="border-b border-white/10 sm:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={id}
+        className="flex w-full items-center justify-between py-3.5 text-left font-semibold sm:pointer-events-none sm:py-0 sm:pb-4"
+      >
+        {title}
+        <ChevronDown size={18} className={`transition-transform duration-200 sm:hidden ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      <ul id={id} className={`${open ? "grid" : "hidden"} gap-3 pb-4 text-sm text-on-night-muted sm:grid sm:pb-0`}>
+        {links.map((link) => (
+          <li key={link.label}>
+            <Link to={link.to} className="hover:text-white">
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Newsletter() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const handleSubscribe = async (e: React.FormEvent) => {
+  const handleSubscribe = async (e: FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
     setStatus("loading");
@@ -44,7 +121,7 @@ export default function Footer() {
       setStatus("done");
       setEmail("");
     } catch (err) {
-      setMessage(err instanceof Error && err.message !== "Failed to fetch" ? err.message : "Couldn't reach the server. Try again shortly.");
+      setMessage(err instanceof Error && err.message !== "Failed to fetch" ? err.message : "Couldn't reach the server. Try again in a minute.");
       setStatus("error");
     }
   };
@@ -55,135 +132,68 @@ export default function Footer() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // clipboard blocked — code is visible anyway
+      // Clipboard blocked: the code is on screen anyway.
     }
   };
 
   return (
-    <footer id="footer" className="bg-neutral-950 text-white pt-20 pb-12 border-t border-neutral-900">
-      <div className="max-w-7xl mx-auto px-5 lg:px-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8">
-          {/* Brand */}
-          <div>
-            <Link to="/" className="text-3xl font-black tracking-tight">
-              NOVA<span className="text-orange-500">.</span>
-            </Link>
-            <p className="text-neutral-400 text-sm leading-relaxed mt-5 max-w-xs">
-              Your modern destination for premium lifestyle, timeless fashion, tech accessories, and everyday essentials.
+    <div className="grid max-w-md gap-2">
+      <p className="font-semibold">Get 10% off your first order</p>
+      <AnimatePresence mode="wait" initial={false}>
+        {status === "done" ? (
+          <m.div
+            key="done"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: DUR.base, ease: EASE.out }}
+            className="grid gap-3 rounded-control bg-night-2 p-4 text-sm"
+          >
+            <p className="flex items-start gap-2">
+              <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-success-on-night" aria-hidden="true" />
+              {message || "You're on the list."}
             </p>
-            <div className="flex gap-3.5 mt-6">
-              <Link
-                to="/contact"
-                aria-label="Contact support"
-                className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-orange-500/50 hover:scale-110 transition-all duration-200"
-              >
-                <MessageCircle size={18} />
-              </Link>
-              <a
-                href="mailto:support@novastore.com"
-                aria-label="Email support"
-                className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-orange-500/50 hover:scale-110 transition-all duration-200"
-              >
-                <Mail size={18} />
-              </a>
+            <button
+              type="button"
+              onClick={copyCode}
+              className="flex items-center justify-between rounded-tag border border-dashed border-white/40 px-3 py-2.5 hover:border-white"
+              aria-label={copied ? "Code copied" : `Copy code ${couponCode}`}
+            >
+              <span className="type-code">{couponCode}</span>
+              <span className="flex items-center gap-1.5 text-xs text-on-night-muted">
+                {copied ? <Check size={15} className="text-success-on-night" /> : <Copy size={15} />}
+                {copied ? "Copied" : "Copy"}
+              </span>
+            </button>
+          </m.div>
+        ) : (
+          <m.form key="form" onSubmit={handleSubscribe} exit={{ opacity: 0, transition: { duration: 0.12 } }} className="grid gap-2">
+            <label htmlFor="newsletter-email" className="sr-only">
+              Email address
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="newsletter-email"
+                type="email"
+                required
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={status === "error"}
+                aria-describedby={status === "error" ? "newsletter-error" : undefined}
+                className="input"
+              />
+              <button type="submit" disabled={status === "loading"} className="btn btn-secondary shrink-0">
+                {status === "loading" ? "Joining…" : "Join"}
+              </button>
             </div>
-          </div>
-
-          {/* Shop */}
-          <div>
-            <h3 className="font-bold text-base mb-5 tracking-wide">Shop</h3>
-            <ul className="space-y-3 text-sm text-neutral-400 font-medium">
-              {SHOP_LINKS.map((link) => (
-                <li key={link.label}>
-                  <Link to={link.to} className="hover:text-orange-400 transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Help */}
-          <div>
-            <h3 className="font-bold text-base mb-5 tracking-wide">Customer Care</h3>
-            <ul className="space-y-3 text-sm text-neutral-400 font-medium">
-              {HELP_LINKS.map((link) => (
-                <li key={link.label}>
-                  <Link to={link.to} className="hover:text-orange-400 transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Newsletter */}
-          <div>
-            <h3 className="font-bold text-base mb-5 tracking-wide">Get 10% Off</h3>
-            <p className="text-sm text-neutral-400 leading-relaxed">
-              Join the list for early drops, private sales and a welcome code for your first order.
-            </p>
-
-            {status === "done" ? (
-              <div className="mt-5 p-4 rounded-2xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-semibold space-y-3 animate-fade-in">
-                <p className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                  {message}
-                </p>
-                <button
-                  onClick={copyCode}
-                  className="w-full flex items-center justify-between bg-neutral-950 border border-dashed border-emerald-500/50 rounded-xl px-3 py-2 font-mono text-sm text-white hover:border-emerald-400"
-                >
-                  {couponCode}
-                  {copied ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
-                </button>
-              </div>
-            ) : (
-              <>
-                <form
-                  className="flex items-center mt-5 bg-neutral-900 border border-neutral-800 rounded-full p-1.5 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/20 transition-all duration-300"
-                  onSubmit={handleSubscribe}
-                >
-                  <input
-                    type="email"
-                    required
-                    placeholder="Enter your email"
-                    aria-label="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="min-w-0 flex-1 px-4 text-xs sm:text-sm text-white placeholder-neutral-500 outline-none bg-transparent"
-                  />
-                  <button
-                    type="submit"
-                    disabled={status === "loading"}
-                    aria-label="Subscribe to newsletter"
-                    className="bg-orange-600 text-white p-2.5 sm:px-4 sm:py-2.5 rounded-full hover:bg-orange-500 active:scale-95 transition-all duration-200 flex items-center gap-1.5 text-xs font-bold disabled:opacity-60"
-                  >
-                    <Send size={15} />
-                    <span className="hidden sm:inline">{status === "loading" ? "…" : "Join"}</span>
-                  </button>
-                </form>
-                {status === "error" && <p className="text-xs text-rose-400 mt-2">{message}</p>}
-              </>
+            {status === "error" && (
+              <p id="newsletter-error" className="text-sm text-error-on-night">
+                {message}
+              </p>
             )}
-          </div>
-        </div>
-
-        <div className="border-t border-neutral-900 mt-16 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
-          <p>© {new Date().getFullYear()} NOVA Store. All rights reserved.</p>
-          <div className="flex gap-6">
-            <Link to="/terms" className="hover:text-neutral-300 transition">
-              Terms
-            </Link>
-            <Link to="/privacy" className="hover:text-neutral-300 transition">
-              Privacy
-            </Link>
-            <Link to="/faq" className="hover:text-neutral-300 transition">
-              Returns
-            </Link>
-          </div>
-        </div>
-      </div>
-    </footer>
+          </m.form>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

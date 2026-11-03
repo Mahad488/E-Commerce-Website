@@ -1,6 +1,7 @@
 # NOVA design system
 
-> Status: **draft v2, waiting for approval** (prompt 0A, step 2). Nothing in `src/` or `admin/` has been changed yet.
+> Status: **v2, approved 3 Nov 2026.** The foundation (tokens, motion primitives, shared components) is built (prompt 0A,
+> step 3). Pages are redesigned one group at a time in prompt 0B.
 > Once approved, this file is the source of truth for every page. It overrides the "orange-500 / gray-950 /
 > rounded-2xl" rules in CLAUDE.md.
 >

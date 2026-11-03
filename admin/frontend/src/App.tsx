@@ -4,6 +4,7 @@ import Admin from "../Admin";
 import AdminLogin from "../AdminLogin";
 import AdminPortalData from "../AdminPortalData";
 import { ToastProvider } from "../../../src/context/ToastContext";
+import MotionProvider from "../../../src/components/motion/MotionProvider";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -79,6 +80,7 @@ function ProtectedAdminRoute({ children }: { children: ReactNode }) {
 export default function AdminApp() {
   return (
     <ErrorBoundary>
+      <MotionProvider>
       <ToastProvider>
         <BrowserRouter>
           <Routes>
@@ -123,6 +125,7 @@ export default function AdminApp() {
           </Routes>
         </BrowserRouter>
       </ToastProvider>
+      </MotionProvider>
     </ErrorBoundary>
   );
 }

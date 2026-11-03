@@ -31,6 +31,15 @@ PROJECT: NOVA e-commerce store (portfolio project). Three parts:
 - No `any` in TypeScript. Keep components small; put shared logic in src/lib.
 - Don't add a dependency if a few lines of code will do; if you add one, say why.
 
+## Design system quick reference (details in docs/DESIGN.md)
+- Tokens: src/styles/tokens.css (Tailwind v4 @theme) → bg-night, bg-porcelain, text-ink, text-muted, bg-flare (buying only),
+  bg-marigold, bg-aurora, rounded-tag/-control/-tile/-sheet, shadow-overlay, ease-nova-out.
+- Classes: btn + btn-buy/-primary/-secondary/-ghost/-danger, input, tag-*, chip, icon-btn, well, skeleton, type-*; `on-night` for dark sections.
+- Motion: `m` from "motion/react" (LazyMotion strict, so never `motion.div`). Timing from src/lib/motion.ts.
+  Primitives in src/components/motion/ (PageTransition, AnimatedNumber, Pressable, Reveal, Stagger, NovaGlow/NovaStars,
+  useFlyToCart). DOM effects (burst, confetti, flyImage) in src/lib/flare.ts. Animate transform/opacity only; respect reduced motion.
+- Drawers/modals: AnimatePresence + useFocusTrap (src/lib/useFocusTrap.ts) + Escape to close.
+
 ## Definition of done (every task)
 - `npx tsc -b`, `npm run lint` and `npm run build` pass in the project root.
 - Backend starts with `cd backend && npm run dev` with no errors.

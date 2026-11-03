@@ -1,511 +1,428 @@
-import { Search, ShoppingCart, Heart, Menu, X, ArrowRight, Sparkles, Globe, PackageSearch } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { ChevronDown, Heart, Menu, Search, ShoppingBag, User, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useCart } from "../context/CartContext";
+import { AnimatePresence, m } from "motion/react";
+
+import { FREE_SHIPPING_THRESHOLD, useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useWishlist } from "../context/WishlistContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { API_BASE_URL } from "../config/api";
 import type { Product } from "../data/products";
 import { getImageUrl, imageFallbackHandler } from "../lib/catalog";
+import { DUR, EASE, SPRING } from "../lib/motion";
+import { useFocusTrap } from "../lib/useFocusTrap";
+import { useProductSearch } from "../lib/useProductSearch";
+import AnimatedNumber from "./motion/AnimatedNumber";
+import { useFlyTarget } from "./motion/flyToCartContext";
+import { usePopOnChange } from "./motion/usePopOnChange";
+import Wordmark from "./Wordmark";
 
-export default function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+const LINKS = [
+  { to: "/products", label: "Shop" },
+  { to: "/categories", label: "Categories" },
+  { to: "/products?sale=true", label: "Deals" },
+  { to: "/faq", label: "Help" },
+];
+
+const MENU_LINKS = [
+  { to: "/products", label: "Shop all" },
+  { to: "/categories", label: "Categories" },
+  { to: "/products?sale=true", label: "Deals" },
+  { to: "/track-order", label: "Track an order" },
+  { to: "/faq", label: "Delivery, returns and FAQ" },
+  { to: "/contact", label: "Contact us" },
+  { to: "/about", label: "About NOVA" },
+];
+
+interface NavbarProps {
+  /** "night" sits on a night hero (white icons) until the hero scrolls under it. */
+  tone?: "light" | "night";
+}
+
+export default function Navbar({ tone = "light" }: NavbarProps) {
   const { cartCount, openCart } = useCart();
   const { wishlistCount } = useWishlist();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { currentCurrency, openDrawer, formatPrice } = useCurrency();
-  const navigate = useNavigate();
+  const flyTarget = useFlyTarget();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [lit, setLit] = useState(false);
 
-
-  // Search Autocomplete state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Product[]>([]);
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
-
-  // Scroll detection for sticky glassmorphism
+  // Light pages: a surface layer + hairline fades in after 8px. Night pages: once the hero has scrolled under the bar.
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  // The count badges are keyed by their value, so the bounce animation replays on every change.
-
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSearchDropdown(false);
+    const onScroll = () => {
+      if (tone === "night") {
+        const hero = document.querySelector("[data-night-hero]");
+        setLit(hero ? hero.getBoundingClientRect().bottom <= 64 : window.scrollY > 8);
+      } else {
+        setLit(window.scrollY > 8);
       }
     };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
-
-  const updateSearch = (value: string) => {
-    setSearchQuery(value);
-    if (!value.trim()) {
-      setSearchResults([]);
-      setShowSearchDropdown(false);
-    }
-  };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [tone]);
 
   useEffect(() => {
-    if (!searchQuery.trim()) return;
+    if (!menuOpen && !searchOpen) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menuOpen, searchOpen]);
 
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/api/products?search=${encodeURIComponent(
-            searchQuery.trim()
-          )}`
-        );
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.products)) {
-          setSearchResults(data.products.slice(0, 5));
-          setShowSearchDropdown(true);
-        }
-      } catch (err) {
-        console.error("Search autocomplete error:", err);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const handleLogout = () => {
-    logout();
-    navigate("/");
-  };
-
-  const submitSearch = (event?: React.FormEvent) => {
-    event?.preventDefault();
-    const term = searchQuery.trim();
-    setShowSearchDropdown(false);
-    setMenuOpen(false);
-    navigate(term ? `/products?search=${encodeURIComponent(term)}` : "/products");
-  };
-
-  const handleSelectProduct = (productId: number) => {
-    setShowSearchDropdown(false);
-    setSearchQuery("");
-    navigate(`/products/${productId}`);
-  };
-
-  const tickerItems = [
-    "✨ FREE SHIPPING ON ORDERS OVER $100",
-    "🎁 NEW HERE? USE CODE WELCOME10 FOR 10% OFF",
-    "⚡ FLASH SALE: UP TO 40% OFF THIS SEASON",
-    "🛡️ 30-DAY MONEY-BACK SATISFACTION GUARANTEE",
-    "⭐ JOIN 10,000+ HAPPY CUSTOMERS TODAY",
-  ];
+  const onNight = tone === "night" && !lit;
 
   return (
-    <header
-      className={`w-full sticky top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-white/90 backdrop-blur-md shadow-md border-b border-gray-200/70"
-          : "bg-white border-b border-gray-100"
-      }`}
-    >
-      {/* Top Animated Announcement Marquee */}
-      <div className="bg-neutral-950 text-white overflow-hidden py-1.5 px-4 text-xs font-medium tracking-wide flex items-center justify-between">
-        <div className="flex-1 overflow-hidden">
-          <div className="animate-marquee whitespace-nowrap flex items-center gap-12">
-            {/* Double items for continuous seamless loop */}
-            {[...tickerItems, ...tickerItems].map((text, idx) => (
-              <span
-                key={idx}
-                className="inline-flex items-center gap-3 text-[11px] font-semibold text-gray-200"
-              >
-                <Sparkles size={12} className="text-orange-400 shrink-0" />
-                {text}
-              </span>
-            ))}
-          </div>
+    <>
+      <div className="bg-night-2 py-[7px] text-center text-[0.8125rem] text-on-night-muted">
+        <div className="wrap">
+          Free delivery over <b className="font-[620] text-white">{formatPrice(FREE_SHIPPING_THRESHOLD)}</b>. Cash on delivery.
         </div>
-
-        {/* Currency Quick Trigger */}
-        <button
-          onClick={openDrawer}
-          className="shrink-0 hidden md:inline-flex items-center gap-1.5 ml-4 px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 text-[11px] font-bold border border-white/15 transition-all cursor-pointer"
-          title="Open Currency & Country Box"
-        >
-          <span>{currentCurrency.flag}</span>
-          <span>{currentCurrency.code} ({currentCurrency.symbol})</span>
-          <span className="text-gray-400 font-normal">| Change</span>
-        </button>
       </div>
 
-      <div className="max-w-7xl mx-auto px-5 lg:px-8">
-        <div className="h-20 flex items-center justify-between">
-          {/* Logo & Mobile Menu Toggle */}
-          <div className="flex items-center gap-3">
-            <button
-              className="lg:hidden p-2 rounded-xl text-gray-700 hover:text-orange-500 hover:bg-orange-50 transition"
-              onClick={() => setMenuOpen(!menuOpen)}
-              aria-label="Toggle menu"
-            >
-              {menuOpen ? <X size={23} /> : <Menu size={23} />}
-            </button>
+      <header className={`sticky top-0 z-50 isolate ${onNight ? "on-night text-white" : "text-ink"}`}>
+        <div aria-hidden="true" className={`absolute inset-0 -z-20 ${tone === "night" ? "bg-night" : "bg-porcelain"}`} />
+        <div
+          aria-hidden="true"
+          className={`absolute inset-0 -z-10 border-b border-line bg-surface transition-opacity duration-150 ease-nova-out ${lit ? "opacity-100" : "opacity-0"}`}
+        />
+        <div className="wrap flex h-14 items-center gap-1 lg:h-16">
+          <button type="button" className="icon-btn -ml-2.5 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+            <Menu size={22} />
+          </button>
 
-            <Link
-              to="/"
-              className="group text-2xl font-black tracking-tight flex items-center"
-            >
-              <span className="text-gray-950 transition-colors group-hover:text-orange-600">
-                NOVA
-              </span>
-              <span className="text-orange-500 text-3xl font-black group-hover:scale-125 transition-transform inline-block">
-                .
-              </span>
-            </Link>
-          </div>
+          <Link to="/" aria-label="NOVA home" className="mr-auto text-[1.375rem] lg:mr-12">
+            <Wordmark primary />
+          </Link>
 
-          {/* Desktop Navigation Links with animated indicator */}
-          <nav className="hidden lg:flex items-center gap-8 text-sm font-semibold text-gray-700">
-            <Link
-              to="/"
-              className="nav-hover-indicator hover:text-orange-600 transition-colors py-1"
-            >
-              Home
-            </Link>
-            <Link
-              to="/categories"
-              className="nav-hover-indicator hover:text-orange-600 transition-colors py-1"
-            >
-              Categories
-            </Link>
-            <Link
-              to="/products"
-              className="nav-hover-indicator hover:text-orange-600 transition-colors py-1"
-            >
-              Shop
-            </Link>
-            <Link
-              to="/products?sale=true"
-              className="nav-hover-indicator hover:text-orange-600 transition-colors py-1 flex items-center gap-1.5"
-            >
-              <span>Deals</span>
-              <span className="bg-gradient-to-r from-rose-500 to-orange-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-xs">
-                SALE
-              </span>
-            </Link>
-            <Link
-              to="/contact"
-              className="nav-hover-indicator hover:text-orange-600 transition-colors py-1"
-            >
-              Contact
-            </Link>
-          </nav>
-
-          {/* Live Search Autocomplete */}
-          <div ref={searchRef} className="relative hidden md:block w-72">
-            <form
-              role="search"
-              onSubmit={submitSearch}
-              className="flex items-center bg-gray-100/90 hover:bg-gray-100 rounded-full px-4 py-2.5 transition focus-within:ring-2 focus-within:ring-orange-500 focus-within:bg-white shadow-inner"
-            >
-              <Search size={18} className="text-gray-400 shrink-0" />
-              <input
-                type="text"
-                aria-label="Search products"
-                placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => updateSearch(e.target.value)}
-                onFocus={() => {
-                  if (searchResults.length > 0) setShowSearchDropdown(true);
-                }}
-                className="bg-transparent outline-none text-sm ml-2 w-full text-gray-800 placeholder-gray-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => updateSearch("")}
-                  aria-label="Clear search"
-                  className="text-gray-400 hover:text-black transition"
-                >
-                  <X size={15} />
-                </button>
-              )}
-            </form>
-
-            {/* Live Autocomplete Dropdown Popup */}
-            {showSearchDropdown && (
-              <div className="absolute top-12 left-0 right-0 bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden z-50 transform transition-all duration-200">
-                {searchResults.length === 0 ? (
-                  <div className="p-4 text-xs text-gray-500 text-center">
-                    No matching products found
-                  </div>
-                ) : (
-                  <div>
-                    <div className="px-4 py-2 text-[10px] font-extrabold uppercase text-gray-400 tracking-wider border-b bg-gray-50">
-                      Search Results ({searchResults.length})
-                    </div>
-                    {searchResults.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelectProduct(item.id)}
-                        className="group w-full p-3 flex items-center gap-3 hover:bg-orange-50/80 transition text-left border-b last:border-0"
-                      >
-                        <img
-                          src={getImageUrl(item.image, item.category)}
-                          onError={imageFallbackHandler(item.category)}
-                          alt={item.name}
-                          className="w-10 h-10 object-cover rounded-lg bg-gray-100 shrink-0 group-hover:scale-105 transition duration-300"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-gray-900 truncate group-hover:text-orange-600 transition">
-                            {item.name}
-                          </p>
-                          <p className="text-[11px] text-gray-500">
-                            {item.category} • {formatPrice(Number(item.price))}
-                          </p>
-                        </div>
-                        <ArrowRight
-                          size={14}
-                          className="text-gray-400 shrink-0 group-hover:translate-x-1 group-hover:text-orange-500 transition-all"
-                        />
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => submitSearch()}
-                      className="w-full px-4 py-2.5 text-xs font-bold text-orange-600 hover:bg-orange-50 text-left"
-                    >
-                      See all results for "{searchQuery.trim()}" →
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* User & Cart Icons */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            {isAuthenticated ? (
-              <div className="flex items-center gap-3">
-                <Link
-                  to="/account"
-                  className="text-sm font-semibold text-gray-700 hover:text-orange-600 transition"
-                >
-                  Hi, {user?.name?.split(" ")[0]}
-                </Link>
-
-                <button
-                  onClick={handleLogout}
-                  className="hidden sm:inline-flex rounded-full border border-gray-200 px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 sm:gap-3">
-                <Link
-                  to="/login"
-                  className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-orange-600 transition px-2 py-1"
-                >
-                  Login
-                </Link>
-
-                <Link
-                  to="/register"
-                  className="hidden sm:inline-flex rounded-full bg-black px-4 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-orange-500 hover:shadow-md hover:shadow-orange-500/20 active:scale-95 transition-all"
-                >
-                  Sign Up
-                </Link>
-              </div>
-            )}
-
-            {/* Currency & Country Sider Box Trigger Button */}
-            <button
-              onClick={openDrawer}
-              className="group hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-gray-100 hover:bg-orange-50 border border-gray-200 hover:border-orange-300 text-gray-800 hover:text-orange-600 transition-all text-xs font-bold shadow-xs active:scale-95 cursor-pointer"
-              title="Open Country Prices & Currency Box"
-              aria-label="Open Country Prices & Currency Box"
-            >
-              <Globe size={15} className="text-orange-500 group-hover:rotate-45 transition-transform duration-300 shrink-0" />
-              <span className="text-sm leading-none shrink-0">{currentCurrency.flag}</span>
-              <span className="font-extrabold">{currentCurrency.code}</span>
-              <span className="hidden xl:inline text-[11px] text-gray-500 font-medium">
-                ({currentCurrency.symbol})
-              </span>
-            </button>
-
-            {/* Wishlist Link & Animated Counter */}
-            <Link
-              to="/wishlist"
-              className="relative p-2 rounded-full hover:bg-rose-50 text-gray-700 hover:text-rose-500 transition-all duration-200"
-              aria-label={`Wishlist with ${wishlistCount} items`}
-            >
-              <Heart size={21} className="transition-transform active:scale-90" />
-              {wishlistCount > 0 && (
-                <span
-                  key={wishlistCount}
-                  className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm animate-heart-pop"
-                >
-                  {wishlistCount}
-                </span>
-              )}
-            </Link>
-
-            {/* Cart Link & Animated Counter */}
-            <button
-              type="button"
-              onClick={openCart}
-              className="relative p-2 rounded-full hover:bg-orange-50 text-gray-700 hover:text-orange-600 transition-all duration-200"
-              aria-label={`Open cart with ${cartCount} items`}
-            >
-              <ShoppingCart size={21} className="transition-transform active:scale-90" />
-              {cartCount > 0 && (
-                <span
-                  key={cartCount}
-                  className="absolute -top-1 -right-1 bg-orange-500 text-white rounded-full min-w-5 h-5 px-1 flex items-center justify-center text-[10px] font-bold shadow-sm animate-cart-bump"
-                >
-                  {cartCount}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Animated Mobile Navigation Menu */}
-        {menuOpen && (
-          <nav className="lg:hidden flex flex-col gap-3 py-5 border-t border-gray-100 text-sm font-medium animate-in slide-in-from-top-4 duration-300">
-            <form
-              role="search"
-              onSubmit={submitSearch}
-              className="md:hidden flex items-center bg-gray-100 rounded-xl px-3.5 py-2.5 focus-within:ring-2 focus-within:ring-orange-500"
-            >
-              <Search size={17} className="text-gray-400 shrink-0" />
-              <input
-                type="search"
-                aria-label="Search products"
-                placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => updateSearch(e.target.value)}
-                className="bg-transparent outline-none text-sm ml-2 w-full"
-              />
-            </form>
-            {/* Currency Drawer Trigger in Mobile Menu */}
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                openDrawer();
-              }}
-              className="px-3.5 py-2.5 rounded-xl bg-orange-50/80 border border-orange-200 text-orange-950 transition flex items-center justify-between font-bold text-left cursor-pointer"
-            >
-              <div className="flex items-center gap-2.5">
-                <Globe size={18} className="text-orange-500" />
-                <span className="text-xs">Country & Currency Box</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-orange-100 text-xs shadow-2xs font-extrabold text-gray-900">
-                <span>{currentCurrency.flag}</span>
-                <span>{currentCurrency.code}</span>
-                <span className="text-orange-600 font-normal">({currentCurrency.symbol})</span>
-              </div>
-            </button>
-
-            <Link
-              to="/"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-orange-50 hover:text-orange-600 transition"
-            >
-              Home
-            </Link>
-            <Link
-              to="/categories"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-orange-50 hover:text-orange-600 transition"
-            >
-              Categories
-            </Link>
-            <Link
-              to="/products"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-orange-50 hover:text-orange-600 transition"
-            >
-              Shop Catalog
-            </Link>
-            <Link
-              to="/products?sale=true"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition flex items-center justify-between font-bold text-rose-600"
-            >
-              <span>Deals & Discounts</span>
-              <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
-                SALE 🔥
-              </span>
-            </Link>
-            <Link
-              to="/wishlist"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition flex items-center justify-between"
-            >
-              <span>Wishlist</span>
-              <span className="bg-rose-100 text-rose-600 text-xs px-2 py-0.5 rounded-full font-bold">
-                {wishlistCount}
-              </span>
-            </Link>
-            <Link
-              to="/cart"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-orange-50 hover:text-orange-600 transition flex items-center justify-between"
-            >
-              <span>Shopping Cart</span>
-              <span className="bg-orange-100 text-orange-600 text-xs px-2 py-0.5 rounded-full font-bold">
-                {cartCount}
-              </span>
-            </Link>
-            {isAuthenticated ? (
-              <div className="sm:hidden flex gap-2">
-                <Link
-                  to="/account"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex-1 text-center px-3 py-2 rounded-lg bg-gray-100 font-semibold"
-                >
-                  My Account
-                </Link>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    handleLogout();
-                  }}
-                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 font-semibold"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <Link
-                to="/register"
-                onClick={() => setMenuOpen(false)}
-                className="sm:hidden text-center px-3 py-2.5 rounded-lg bg-black text-white font-semibold"
-              >
-                Create an account
+          <nav aria-label="Main" className="mr-auto hidden items-center gap-7 text-[0.9375rem] font-[560] lg:flex">
+            {LINKS.map((link) => (
+              <Link key={link.label} to={link.to} className="opacity-90 underline-offset-[6px] hover:underline hover:opacity-100">
+                {link.label}
               </Link>
-            )}
-            <Link
-              to="/track-order"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-gray-100 transition flex items-center gap-2"
-            >
-              <PackageSearch size={16} className="text-orange-500" />
-              Track Order
-            </Link>
-            <Link
-              to="/contact"
-              onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 rounded-lg hover:bg-gray-100 transition"
-            >
-              Contact Us
-            </Link>
+            ))}
           </nav>
+
+          <DesktopSearch />
+
+          <button type="button" className="icon-btn md:hidden" onClick={() => setSearchOpen(true)} aria-label="Search products">
+            <Search size={21} />
+          </button>
+
+          <button
+            type="button"
+            onClick={openDrawer}
+            className="hidden h-10 items-center gap-1.5 rounded-full px-3 text-sm font-semibold hover:bg-ink/5 sm:inline-flex [.on-night_&]:hover:bg-white/10"
+            aria-label={`Currency: ${currentCurrency.code}. Change currency`}
+          >
+            <span aria-hidden="true">{currentCurrency.flag}</span>
+            {currentCurrency.code}
+            <ChevronDown size={15} aria-hidden="true" />
+          </button>
+
+          <Link to={isAuthenticated ? "/account" : "/login"} className="icon-btn hidden sm:inline-grid" aria-label={isAuthenticated ? "Your account" : "Sign in"}>
+            <User size={21} />
+          </Link>
+
+          <Link to="/wishlist" className="icon-btn" aria-label={`Wishlist, ${wishlistCount} ${wishlistCount === 1 ? "item" : "items"}`}>
+            <Heart size={21} />
+            <CountBadge count={wishlistCount} />
+          </Link>
+
+          <button
+            ref={flyTarget}
+            type="button"
+            onClick={openCart}
+            className="icon-btn -mr-2.5"
+            aria-label={`Cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}`}
+          >
+            <ShoppingBag size={21} />
+            <CountBadge count={cartCount} />
+          </button>
+        </div>
+      </header>
+
+      <AnimatePresence>{menuOpen && <MenuSheet onClose={() => setMenuOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{searchOpen && <SearchSheet onClose={() => setSearchOpen(false)} />}</AnimatePresence>
+    </>
+  );
+}
+
+function CountBadge({ count }: { count: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  usePopOnChange(ref, count);
+  return (
+    <AnimatePresence>
+      {count > 0 && (
+        <m.span
+          ref={ref}
+          aria-hidden="true"
+          className="count-badge overflow-hidden"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1, transition: SPRING.pop }}
+          exit={{ scale: 0, transition: { duration: DUR.quick } }}
+        >
+          <AnimatedNumber value={count} />
+        </m.span>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function useSearchSubmit(onDone?: () => void) {
+  const navigate = useNavigate();
+  return {
+    goToResults: (term: string) => {
+      onDone?.();
+      navigate(term.trim() ? `/products?search=${encodeURIComponent(term.trim())}` : "/products");
+    },
+    goToProduct: (id: number) => {
+      onDone?.();
+      navigate(`/products/${id}`);
+    },
+  };
+}
+
+function SearchResults({ results, query, onPick, onAll }: { results: Product[]; query: string; onPick: (id: number) => void; onAll: () => void }) {
+  const { formatPrice } = useCurrency();
+  if (results.length === 0) {
+    return <p className="p-4 text-sm text-muted">No products match “{query.trim()}”. Try a shorter word.</p>;
+  }
+  return (
+    <div className="py-1.5">
+      {results.map((item) => (
+        <button key={item.id} type="button" onClick={() => onPick(item.id)} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-porcelain">
+          <span className="well block h-12 w-10 shrink-0 rounded-[8px]">
+            <img
+              src={getImageUrl(item.image, item.category)}
+              onError={imageFallbackHandler(item.category)}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{item.name}</span>
+            <span className="type-price block text-sm text-muted">{formatPrice(Number(item.price))}</span>
+          </span>
+        </button>
+      ))}
+      <button type="button" onClick={onAll} className="w-full px-3 py-2.5 text-left text-sm font-semibold underline underline-offset-4 hover:text-flare">
+        See all results for “{query.trim()}”
+      </button>
+    </div>
+  );
+}
+
+function DesktopSearch() {
+  const { query, setQuery, results, searched } = useProductSearch();
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const { goToResults, goToProduct } = useSearchSubmit(() => {
+    setOpen(false);
+    setQuery("");
+  });
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    goToResults(query);
+  };
+
+  return (
+    <div ref={boxRef} className="relative mr-2 hidden w-60 md:block xl:w-72">
+      <form role="search" onSubmit={submit} className="relative">
+        <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
+        <input
+          type="search"
+          aria-label="Search products"
+          placeholder="Search products"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+          className="input h-10 rounded-full pl-10 text-[0.9375rem]"
+        />
+      </form>
+      <AnimatePresence>
+        {open && searched && query.trim() && (
+          <m.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4, transition: { duration: 0.12 } }}
+            transition={{ duration: DUR.quick, ease: EASE.out }}
+            className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-tile border border-line bg-surface text-ink shadow-overlay"
+          >
+            <SearchResults results={results} query={query} onPick={goToProduct} onAll={() => goToResults(query)} />
+          </m.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SearchSheet({ onClose }: { onClose: () => void }) {
+  const { query, setQuery, results, searched } = useProductSearch();
+  const { goToResults, goToProduct } = useSearchSubmit(onClose);
+  const ref = useFocusTrap<HTMLDivElement>(true);
+
+  return (
+    <m.div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search products"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      className="fixed inset-0 z-[85] flex flex-col bg-surface pt-[env(safe-area-inset-top,0px)] text-ink"
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0, transition: SPRING.sheet }}
+      exit={{ opacity: 0, y: -8, transition: { duration: DUR.quick, ease: EASE.in } }}
+    >
+      <form
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          goToResults(query);
+        }}
+        className="wrap flex items-center gap-2 border-b border-line py-2"
+      >
+        <Search size={19} className="shrink-0 text-muted" aria-hidden="true" />
+        <input
+          data-autofocus
+          type="search"
+          aria-label="Search products"
+          placeholder="Search products"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="h-12 min-w-0 flex-1 bg-transparent text-base outline-none"
+        />
+        <button type="button" onClick={onClose} className="icon-btn -mr-2.5" aria-label="Close search">
+          <X size={22} />
+        </button>
+      </form>
+      <div className="wrap flex-1 overflow-y-auto">
+        {searched && query.trim() ? (
+          <SearchResults results={results} query={query} onPick={goToProduct} onAll={() => goToResults(query)} />
+        ) : (
+          <p className="py-6 text-sm text-muted">Search by product name, category or colour.</p>
         )}
       </div>
-    </header>
+    </m.div>
+  );
+}
+
+function MenuSheet({ onClose }: { onClose: () => void }) {
+  const { isAuthenticated, user, logout } = useAuth();
+  const { cartCount, openCart } = useCart();
+  const { wishlistCount } = useWishlist();
+  const { currentCurrency, openDrawer } = useCurrency();
+  const navigate = useNavigate();
+  const ref = useFocusTrap<HTMLDivElement>(true);
+
+  return (
+    <div className="fixed inset-0 z-[85]" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <m.div
+        className="absolute inset-0 bg-night/50"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { duration: DUR.quick } }}
+        exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+      />
+      <m.div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu"
+        className="absolute inset-y-0 left-0 flex w-[min(88vw,360px)] flex-col overflow-y-auto rounded-r-sheet bg-surface pb-[calc(20px+env(safe-area-inset-bottom,0px))] pt-[env(safe-area-inset-top,0px)] text-ink shadow-overlay"
+        initial={{ x: "-100%" }}
+        animate={{ x: 0, transition: SPRING.sheet }}
+        exit={{ x: "-100%", transition: { duration: 0.24, ease: EASE.in } }}
+      >
+        <div className="flex h-14 items-center justify-between pl-5 pr-2">
+          <Wordmark className="text-[1.375rem]" />
+          <button type="button" onClick={onClose} className="icon-btn" aria-label="Close menu" data-autofocus>
+            <X size={22} />
+          </button>
+        </div>
+
+        <nav aria-label="Menu" className="grid px-3 pt-2">
+          {MENU_LINKS.map((link) => (
+            <Link key={link.label} to={link.to} onClick={onClose} className="rounded-control px-3 py-3 text-[1.0625rem] font-semibold hover:bg-porcelain">
+              {link.label}
+            </Link>
+          ))}
+          <Link to="/wishlist" onClick={onClose} className="flex items-center justify-between rounded-control px-3 py-3 text-[1.0625rem] font-semibold hover:bg-porcelain">
+            Wishlist <span className="text-sm font-medium text-muted">{wishlistCount}</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openCart();
+            }}
+            className="flex items-center justify-between rounded-control px-3 py-3 text-left text-[1.0625rem] font-semibold hover:bg-porcelain"
+          >
+            Cart <span className="text-sm font-medium text-muted">{cartCount}</span>
+          </button>
+        </nav>
+
+        <div className="mx-5 my-4 border-t border-line" />
+
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            openDrawer();
+          }}
+          className="mx-3 flex items-center justify-between rounded-control px-3 py-3 text-left hover:bg-porcelain"
+        >
+          <span className="font-semibold">Currency</span>
+          <span className="text-muted">
+            <span aria-hidden="true">{currentCurrency.flag}</span> {currentCurrency.code}
+          </span>
+        </button>
+
+        <div className="mt-auto grid gap-2 px-5 pt-6">
+          {isAuthenticated ? (
+            <>
+              <Link to="/account" onClick={onClose} className="btn btn-primary">
+                {user?.name ? `${user.name.split(" ")[0]}'s account` : "Your account"}
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  logout();
+                  navigate("/");
+                }}
+                className="btn btn-secondary"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/login" onClick={onClose} className="btn btn-primary">
+                Sign in
+              </Link>
+              <Link to="/register" onClick={onClose} className="btn btn-secondary">
+                Create an account
+              </Link>
+            </>
+          )}
+        </div>
+      </m.div>
+    </div>
   );
 }

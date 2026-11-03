@@ -1,78 +1,387 @@
 @import "tailwindcss";
 
-/* Tailwind v4 made the default border colour `currentColor` (v3 used gray-200).
-   The components here were written for the v3 default, so restore it. */
+@import "./styles/tokens.css";
+
 @layer base {
+  /* Tailwind v4 made the default border colour `currentColor`; NOVA uses the hairline token. */
   *,
   ::after,
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
+    border-color: var(--color-line, currentColor);
   }
-}
 
-* {
-  box-sizing: border-box;
-}
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
-html {
-  scroll-behavior: smooth;
-}
+  body {
+    margin: 0;
+    background-color: var(--color-porcelain);
+    color: var(--color-ink);
+    font-weight: 420;
+    line-height: 1.55;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-body {
-  margin: 0;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #faf9f6;
-  color: #111111;
-  overflow-x: hidden;
-}
+  button,
+  a {
+    cursor: pointer;
+  }
 
-button,
-a {
-  cursor: pointer;
-}
+  button {
+    font-family: inherit;
+  }
 
-button {
-  font-family: inherit;
-}
+  img {
+    display: block;
+    max-width: 100%;
+  }
 
-img {
-  display: block;
-  max-width: 100%;
+  :focus-visible {
+    outline: 2px solid var(--color-flare);
+    outline-offset: 2px;
+  }
+
+  .on-night :focus-visible {
+    outline-color: var(--color-flare-glow);
+  }
+
+  ::selection {
+    background: var(--color-flare);
+    color: #fff;
+  }
 }
 
 /* ==========================================================================
-   ANIMATION KEYFRAMES & UTILITIES
+   Components: the shared building blocks every page uses (DESIGN.md §7)
    ========================================================================== */
+@layer components {
+  /* Layout */
+  .wrap {
+    width: 100%;
+    max-width: 1280px;
+    margin-inline: auto;
+    padding-inline: 16px;
+  }
+  @media (min-width: 640px) {
+    .wrap { padding-inline: 24px; }
+  }
+  @media (min-width: 1024px) {
+    .wrap { padding-inline: 40px; }
+  }
 
-/* Top Scroll Progress Indicator */
-.scroll-progress-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  z-index: 100;
-  background: linear-gradient(90deg, #ea580c, #f97316, #fb923c, #f43f5e);
-  transform-origin: 0% 50%;
-  box-shadow: 0 0 10px rgba(234, 88, 12, 0.5);
+  /* Type roles */
+  .type-display-xl {
+    font-size: var(--text-display-xl);
+    line-height: 0.95;
+    font-stretch: 125%;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .type-display-l {
+    font-size: var(--text-display-l);
+    line-height: 1;
+    font-stretch: 125%;
+    font-weight: 760;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  .type-h2 {
+    font-size: var(--text-h2);
+    line-height: 1.1;
+    font-stretch: 112%;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .type-h3 {
+    font-size: 1rem;
+    line-height: 1.3;
+    font-weight: 620;
+  }
+  .type-label {
+    display: block;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+    font-stretch: 87.5%;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .type-price {
+    font-stretch: 87.5%;
+    font-weight: 720;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .type-code {
+    font-stretch: 87.5%;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .price-old {
+    color: var(--color-muted);
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Buttons: buy (pink, only for buying), primary (ink), secondary, ghost, danger */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 48px;
+    padding-inline: 20px;
+    border-radius: var(--radius-control);
+    border: 1px solid transparent;
+    font-size: 0.9375rem;
+    font-weight: 620;
+    line-height: 1;
+    white-space: nowrap;
+    text-decoration: none;
+    user-select: none;
+    transition:
+      background-color 160ms var(--ease-nova-out),
+      border-color 160ms var(--ease-nova-out),
+      transform 90ms var(--ease-nova-out);
+  }
+  @media (min-width: 1024px) {
+    .btn { height: 44px; }
+  }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-buy { background: var(--color-flare); color: #fff; }
+  .btn-buy:hover:not(:disabled) { background: var(--color-flare-press); }
+  .on-night .btn-buy { background: var(--color-flare-glow); color: var(--color-night); }
+  .on-night .btn-buy:hover:not(:disabled) { background: #ff7db9; }
+  .btn-primary { background: var(--color-ink); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #2a2450; }
+  .btn-secondary { background: var(--color-surface); border-color: var(--color-line-strong); color: var(--color-ink); }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--color-ink); }
+  .on-night .btn-secondary { background: transparent; border-color: rgb(255 255 255 / 0.5); color: #fff; }
+  .on-night .btn-secondary:hover:not(:disabled) { border-color: #fff; background: rgb(255 255 255 / 0.06); }
+  .btn-ghost { background: transparent; color: inherit; padding-inline: 8px; }
+  .btn-ghost:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 4px; }
+  .btn-danger { background: var(--color-surface); border-color: var(--color-error); color: var(--color-error); }
+  .btn-danger:hover:not(:disabled) { background: var(--color-error-tint); }
+  .btn-sm { height: 40px; padding-inline: 14px; font-size: 0.875rem; }
+
+  .icon-btn {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: 9999px;
+    background: transparent;
+    color: inherit;
+    transition: background-color 160ms var(--ease-nova-out);
+  }
+  .icon-btn:hover { background: rgb(23 19 46 / 0.06); }
+  .on-night .icon-btn:hover { background: rgb(255 255 255 / 0.1); }
+  .icon-btn:active > svg { transform: scale(0.9); }
+
+  /* Count badge on nav icons */
+  .count-badge {
+    position: absolute;
+    top: 3px;
+    right: 0;
+    min-width: 19px;
+    height: 19px;
+    padding-inline: 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 9999px;
+    background: var(--color-flare);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 760;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .on-night .count-badge { background: var(--color-flare-glow); color: var(--color-night); }
+
+  /* Inputs */
+  .input {
+    height: 48px;
+    width: 100%;
+    min-width: 0;
+    padding-inline: 14px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-size: 16px; /* 16px stops iOS zooming into the field */
+    transition: border-color 160ms var(--ease-nova-out);
+  }
+  .input::placeholder { color: var(--color-muted); }
+  .input:hover { border-color: var(--color-ink); }
+  .input:focus { outline: 2px solid var(--color-flare); outline-offset: 2px; border-color: var(--color-ink); }
+  .input[aria-invalid="true"] { border-color: var(--color-error); }
+  .on-night .input { background: var(--color-night-2); border-color: rgb(255 255 255 / 0.3); color: #fff; }
+  .on-night .input::placeholder { color: var(--color-on-night-muted); }
+  .on-night .input:focus { outline-color: var(--color-flare-glow); }
+
+  /* Tags: one per card, sharp like a printed price tag */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding-inline: 7px;
+    border-radius: var(--radius-tag);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-stretch: 87.5%;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .tag-deal { background: var(--color-marigold); color: var(--color-ink); }
+  .tag-new { background: var(--color-aurora); color: #fff; }
+  .tag-best { background: var(--color-ink); color: #fff; }
+  .tag-out { background: var(--color-surface); color: var(--color-muted); }
+
+  /* Filter / category chips */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding-inline: 14px;
+    flex: none;
+    border-radius: 9999px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-size: 0.9375rem;
+    font-weight: 560;
+    white-space: nowrap;
+    transition: transform 90ms var(--ease-nova-out);
+  }
+  .chip:active { transform: scale(0.96); }
+  .chip[aria-pressed="true"],
+  .chip[aria-current="true"] { background: var(--color-flare-tint); border-color: var(--color-flare); color: var(--color-flare-press); }
+
+  /* Product image well: photos multiply onto it so mixed supplier shots read as one set */
+  .well {
+    position: relative;
+    overflow: hidden;
+    background: var(--color-well);
+    border-radius: var(--radius-tile);
+  }
+  .well > img,
+  .well-img {
+    mix-blend-mode: multiply;
+  }
+
+  /* Skeletons: exact final dimensions, one shimmer band moving by transform */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--color-well);
+    border-radius: var(--radius-control);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    animation: nova-shimmer 1.4s var(--ease-nova-in-out) infinite;
+  }
+
+  /* Number roll cells (AnimatedNumber) */
+  .roll-cell {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: top;
+    padding-block: 0.06em;
+    margin-block: -0.06em;
+  }
+
+  /* Nova glow (brand layer only): radial light + slow rays + twinkling stars */
+  .nova-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: radial-gradient(
+      closest-side,
+      rgb(255 255 255 / 0.85),
+      rgb(255 92 168 / 0.72) 38%,
+      rgb(255 92 168 / 0.55) 52%,
+      rgb(255 178 30 / 0.4) 63%,
+      rgb(106 75 224 / 0.4) 74%,
+      rgb(106 75 224 / 0.14) 86%,
+      rgb(106 75 224 / 0) 98%
+    );
+    animation: nova-breathe 7s ease-in-out infinite;
+  }
+  .nova-glow-soft {
+    background: radial-gradient(
+      closest-side,
+      rgb(255 92 168 / 0.55),
+      rgb(255 178 30 / 0.26) 24%,
+      rgb(106 75 224 / 0.34) 46%,
+      rgb(106 75 224 / 0.13) 62%,
+      rgb(106 75 224 / 0) 80%
+    );
+  }
+  .nova-rays {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: repeating-conic-gradient(from 0deg, rgb(255 255 255 / 0.11) 0deg 3deg, rgb(255 255 255 / 0) 3deg 18deg);
+    -webkit-mask: radial-gradient(closest-side, #000 40%, transparent 96%);
+    mask: radial-gradient(closest-side, #000 40%, transparent 96%);
+    animation: nova-spin 90s linear infinite;
+  }
+  .nova-star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 9999px;
+    background: #fff;
+    opacity: 0.25;
+    animation: nova-twinkle 4s ease-in-out infinite;
+  }
+  [data-paused="true"] .nova-glow,
+  [data-paused="true"] .nova-rays,
+  [data-paused="true"] .nova-star,
+  [data-paused="true"] .nova-ambient {
+    animation-play-state: paused;
+  }
 }
 
-@supports (animation-timeline: scroll()) {
-  .scroll-progress-bar {
-    animation: scroll-progress-grow auto linear;
-    animation-timeline: scroll();
-  }
-  @keyframes scroll-progress-grow {
-    from {
-      transform: scaleX(0);
-    }
-    to {
-      transform: scaleX(1);
-    }
-  }
+@keyframes nova-shimmer {
+  to { transform: translateX(100%); }
 }
+@keyframes nova-breathe {
+  50% { transform: scale(1.07); }
+}
+@keyframes nova-spin {
+  to { transform: rotate(1turn); }
+}
+@keyframes nova-twinkle {
+  50% { opacity: 0.95; transform: scale(1.7); }
+}
+@keyframes nova-bob {
+  50% { transform: translateY(-7px) rotate(0.7deg); }
+}
+
+/* ==========================================================================
+   Legacy animation utilities. Pages still use these; each one is removed
+   when its page group is redesigned in prompt 0B. Don't use them in new code.
+   ========================================================================== */
 
 /* Floating Elements (Badges, Floating Accents) */
 @keyframes float-slow {
@@ -180,49 +489,6 @@ img {
   animation: shimmer-sweep 3s infinite;
 }
 
-/* Heart Pop Spring Animation (for Wishlist toggle) */
-@keyframes heart-pop {
-  0% {
-    transform: scale(1);
-  }
-  25% {
-    transform: scale(1.4) rotate(-8deg);
-  }
-  50% {
-    transform: scale(0.9) rotate(5deg);
-  }
-  75% {
-    transform: scale(1.15) rotate(-2deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-.animate-heart-pop {
-  animation: heart-pop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* Cart Bump Animation (for Navbar & button feedback) */
-@keyframes cart-bump {
-  0% {
-    transform: scale(1);
-  }
-  30% {
-    transform: scale(1.3) translateY(-3px);
-  }
-  60% {
-    transform: scale(0.92);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.animate-cart-bump {
-  animation: cart-bump 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
 /* Marquee Running Ticker */
 @keyframes marquee-scroll {
   0% {
@@ -241,27 +507,6 @@ img {
 
 .animate-marquee:hover {
   animation-play-state: paused;
-}
-
-/* Modern Link Hover Indicator */
-.nav-hover-indicator {
-  position: relative;
-}
-
-.nav-hover-indicator::after {
-  content: "";
-  position: absolute;
-  bottom: -4px;
-  left: 0;
-  width: 0%;
-  height: 2px;
-  background: #ea580c;
-  border-radius: 9999px;
-  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.nav-hover-indicator:hover::after {
-  width: 100%;
 }
 
 /* Scroll-Driven Animations (Standardized Modern Pattern) */
@@ -283,16 +528,6 @@ img {
       animation-timeline: view();
       animation-range: entry 10% cover 28%;
     }
-  }
-}
-
-/* Toast progress timer animation */
-@keyframes toast-progress {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
   }
 }
 
@@ -358,7 +593,8 @@ img {
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
-/* Reduced Motion Mode (Full Accessibility Compliance) */
+/* Reduced motion: no movement, only instant or opacity changes. MotionConfig
+   reducedMotion="user" handles motion components; this handles CSS. */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
@@ -371,5 +607,8 @@ img {
   .animate-marquee {
     animation: none;
     transform: none;
+  }
+  .skeleton::after {
+    display: none;
   }
 }

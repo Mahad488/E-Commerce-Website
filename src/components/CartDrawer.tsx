@@ -1,31 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Minus, Plus, ShoppingBag, Trash2, Truck, X, ArrowRight } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
+import { Minus, Plus, X } from "lucide-react";
 
-import { FREE_SHIPPING_THRESHOLD, useCart } from "../context/CartContext";
+import { FREE_SHIPPING_THRESHOLD, useCart, type CartItem } from "../context/CartContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { getImageUrl, imageFallbackHandler } from "../lib/catalog";
+import { burst, FLARE_COLORS } from "../lib/flare";
+import { DUR, EASE, SPRING } from "../lib/motion";
+import { useFocusTrap } from "../lib/useFocusTrap";
+import AnimatedNumber from "./motion/AnimatedNumber";
 
 /**
- * Slide-out mini cart. Opens automatically whenever something is added.
+ * The mini cart. Opens automatically when something is added (after the photo
+ * lands in the bag), springs in from the right, traps focus and returns it on close.
  */
 export default function CartDrawer() {
-  const {
-    items,
-    isCartOpen,
-    closeCart,
-    subtotal,
-    amountToFreeShipping,
-    increaseQuantity,
-    decreaseQuantity,
-    removeFromCart,
-    maxQuantityFor,
-    cartCount,
-  } = useCart();
-  const { formatPrice } = useCurrency();
+  const { isCartOpen, closeCart } = useCart();
   const location = useLocation();
 
-  // Close when navigating and on Escape.
+  // Close when navigating.
   useEffect(() => {
     closeCart();
   }, [location.pathname, closeCart]);
@@ -41,163 +35,205 @@ export default function CartDrawer() {
     };
   }, [isCartOpen, closeCart]);
 
-  const progress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
+  return (
+    <AnimatePresence>
+      {isCartOpen && (
+        <div key="cart" className="fixed inset-0 z-[80]">
+          <m.div
+            className="absolute inset-0 bg-night/50"
+            onClick={closeCart}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { duration: DUR.quick } }}
+            exit={{ opacity: 0, transition: { duration: DUR.quick } }}
+          />
+          <CartPanel />
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function CartPanel() {
+  const { items, closeCart, subtotal, amountToFreeShipping, cartCount } = useCart();
+  const { formatPrice } = useCurrency();
+  const panelRef = useFocusTrap<HTMLElement>(true);
 
   return (
-    <div
-      className={`fixed inset-0 z-[80] ${isCartOpen ? "" : "pointer-events-none"}`}
-      aria-hidden={!isCartOpen}
-      inert={!isCartOpen}
+    <m.aside
+      ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cart-title"
+      tabIndex={-1}
+      className="absolute right-0 top-0 flex h-full w-full max-w-[420px] flex-col bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-overlay outline-none sm:rounded-l-sheet"
+      initial={{ x: "100%" }}
+      animate={{ x: 0, transition: SPRING.sheet }}
+      exit={{ x: "100%", transition: { duration: 0.26, ease: EASE.in } }}
     >
-      <div
-        onClick={closeCart}
-        className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-300 ${
-          isCartOpen ? "opacity-100" : "opacity-0"
-        }`}
-      />
+      <header className="flex items-center justify-between pb-2 pl-5 pr-3 pt-[calc(12px+env(safe-area-inset-top,0px))]">
+        <h2 id="cart-title" className="type-h2 text-[1.375rem]">
+          Your cart <span className="text-muted font-medium">({cartCount})</span>
+        </h2>
+        <button type="button" onClick={closeCart} aria-label="Close cart" className="icon-btn" data-autofocus>
+          <X size={22} />
+        </button>
+      </header>
 
-      <aside
-        role="dialog"
-        aria-label="Shopping cart"
-        className={`absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
-          isCartOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <header className="flex items-center justify-between px-6 py-5 border-b">
-          <div className="flex items-center gap-2.5">
-            <ShoppingBag size={20} className="text-orange-500" />
-            <h2 className="font-black text-lg">Your Cart</h2>
-            <span className="text-xs font-bold bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">{cartCount}</span>
+      {items.length > 0 && <FreeDeliveryMeter subtotal={subtotal} remaining={amountToFreeShipping} />}
+
+      <div className="flex-1 overflow-y-auto px-5">
+        {items.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
+            <p className="type-h3">Your cart is empty.</p>
+            <p className="text-sm text-muted">Tap + on any product to add it.</p>
+            <Link to="/products" onClick={closeCart} className="btn btn-primary mt-4">
+              Start shopping
+            </Link>
           </div>
-          <button onClick={closeCart} aria-label="Close cart" className="p-2 rounded-full hover:bg-gray-100 transition">
-            <X size={20} />
-          </button>
-        </header>
+        ) : (
+          <ul className="isolate">
+            <AnimatePresence initial={false}>
+              {items.map((item) => (
+                <CartLine key={`${item.product.id}-${item.selectedColor}`} item={item} />
+              ))}
+            </AnimatePresence>
+          </ul>
+        )}
+      </div>
 
-        {/* Free shipping progress */}
-        {items.length > 0 && (
-          <div className="px-6 py-4 bg-orange-50/60 border-b border-orange-100">
-            <p className="text-xs font-semibold text-gray-700 flex items-center gap-2">
-              <Truck size={15} className="text-orange-500 shrink-0" />
-              {amountToFreeShipping > 0 ? (
-                <span>
-                  Add <strong className="text-orange-600">{formatPrice(amountToFreeShipping)}</strong> more for free shipping
-                </span>
-              ) : (
-                <span className="text-emerald-700 font-bold">You've unlocked free shipping! 🎉</span>
-              )}
-            </p>
-            <div className="mt-2 h-2 rounded-full bg-orange-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-500"
-                style={{ width: `${amountToFreeShipping > 0 ? progress : 100}%` }}
-              />
-            </div>
+      {items.length > 0 && (
+        <footer className="space-y-3 border-t border-line px-5 pb-5 pt-4">
+          <div className="flex items-baseline justify-between">
+            <span className="type-h3">Subtotal</span>
+            <AnimatedNumber value={subtotal} format={formatPrice} className="type-price text-2xl" />
           </div>
-        )}
+          <p className="text-sm text-muted">Delivery and discounts are worked out at checkout.</p>
+          <Link to="/checkout" onClick={closeCart} className="btn btn-buy w-full">
+            Checkout
+          </Link>
+          <Link to="/cart" onClick={closeCart} className="btn btn-secondary w-full">
+            View cart
+          </Link>
+        </footer>
+      )}
+    </m.aside>
+  );
+}
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {items.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center py-16">
-              <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
-                <ShoppingBag size={32} className="text-gray-400" />
-              </div>
-              <p className="font-bold mt-5">Your cart is empty</p>
-              <p className="text-sm text-gray-500 mt-1">Find something you love.</p>
-              <Link
-                to="/products"
-                className="mt-6 bg-black text-white px-6 py-3 rounded-full text-sm font-bold hover:bg-orange-500 transition"
-              >
-                Start shopping
-              </Link>
-            </div>
-          ) : (
-            <ul className="divide-y">
-              {items.map((item) => {
-                const max = maxQuantityFor(item);
-                return (
-                  <li key={`${item.product.id}-${item.selectedColor}`} className="py-4 flex gap-4">
-                    <Link to={`/products/${item.product.id}`} className="shrink-0">
-                      <img
-                        src={getImageUrl(item.selectedColorImage || item.product.image, item.product.category)}
-                        onError={imageFallbackHandler(item.product.category)}
-                        alt={item.product.name}
-                        className="w-20 h-20 rounded-xl object-cover bg-gray-100 border"
-                      />
-                    </Link>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between gap-2">
-                        <Link
-                          to={`/products/${item.product.id}`}
-                          className="font-semibold text-sm leading-snug hover:text-orange-600 line-clamp-2"
-                        >
-                          {item.product.name}
-                        </Link>
-                        <button
-                          onClick={() => removeFromCart(item.product.id, item.selectedColor)}
-                          aria-label={`Remove ${item.product.name}`}
-                          className="text-gray-400 hover:text-red-500 transition shrink-0"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                      {item.selectedColor && item.selectedColor !== "Standard" && (
-                        <p className="text-xs text-gray-500 mt-0.5">{item.selectedColor}</p>
-                      )}
-                      <div className="flex items-center justify-between mt-2.5">
-                        <div className="flex items-center border rounded-full">
-                          <button
-                            onClick={() => decreaseQuantity(item.product.id, item.selectedColor)}
-                            aria-label="Decrease quantity"
-                            className="p-1.5 hover:bg-gray-100 rounded-full"
-                          >
-                            <Minus size={13} />
-                          </button>
-                          <span className="px-2.5 text-sm font-bold">{item.quantity}</span>
-                          <button
-                            onClick={() => increaseQuantity(item.product.id, item.selectedColor)}
-                            disabled={item.quantity >= max}
-                            aria-label="Increase quantity"
-                            className="p-1.5 hover:bg-gray-100 rounded-full disabled:opacity-30"
-                          >
-                            <Plus size={13} />
-                          </button>
-                        </div>
-                        <span className="font-bold text-sm">{formatPrice(item.product.price * item.quantity)}</span>
-                      </div>
-                      {item.quantity >= max && <p className="text-[11px] text-amber-600 mt-1">Max available</p>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+function FreeDeliveryMeter({ subtotal, remaining }: { subtotal: number; remaining: number }) {
+  const { formatPrice } = useCurrency();
+  const unlocked = remaining <= 0;
+  const progress = unlocked ? 1 : Math.min(1, subtotal / FREE_SHIPPING_THRESHOLD);
+  const barRef = useRef<HTMLDivElement>(null);
+  const wasUnlocked = useRef(unlocked);
 
-        {items.length > 0 && (
-          <footer className="border-t px-6 py-5 space-y-3 bg-white">
-            <div className="flex justify-between font-bold">
-              <span>Subtotal</span>
-              <span>{formatPrice(subtotal)}</span>
-            </div>
-            <p className="text-xs text-gray-500">Shipping and discounts are calculated at checkout.</p>
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <Link
-                to="/cart"
-                className="text-center border border-gray-300 rounded-full py-3 text-sm font-bold hover:bg-gray-50 transition"
-              >
-                View cart
-              </Link>
-              <Link
-                to="/checkout"
-                className="text-center bg-black text-white rounded-full py-3 text-sm font-bold hover:bg-orange-500 transition flex items-center justify-center gap-1.5"
-              >
-                Checkout <ArrowRight size={15} />
-              </Link>
-            </div>
-          </footer>
+  // `fill` + mini flare when the meter reaches 100% (not when it opens already full).
+  useEffect(() => {
+    if (unlocked && !wasUnlocked.current) {
+      const timer = window.setTimeout(() => {
+        const r = barRef.current?.getBoundingClientRect();
+        if (r) burst(r.right - 4, r.top + r.height / 2, { rays: 10, distance: 16, colors: [FLARE_COLORS.marigold, FLARE_COLORS.pink], sparks: 3, zIndex: 90 });
+      }, 700);
+      wasUnlocked.current = unlocked;
+      return () => window.clearTimeout(timer);
+    }
+    wasUnlocked.current = unlocked;
+  }, [unlocked]);
+
+  return (
+    <div className="grid gap-2 border-b border-line px-5 pb-4">
+      <p className="text-sm" aria-live="polite">
+        {unlocked ? (
+          <span className="font-semibold">Free delivery unlocked</span>
+        ) : (
+          <>
+            Add <span className="font-semibold">{formatPrice(remaining)}</span> more for free delivery
+          </>
         )}
-      </aside>
+      </p>
+      <div ref={barRef} className="relative h-2 overflow-hidden rounded-full bg-well">
+        <m.div
+          className={`absolute inset-0 origin-left rounded-full ${unlocked ? "bg-marigold" : "bg-flare"}`}
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: progress }}
+          transition={{ duration: 0.7, delay: 0.2, ease: EASE.out }}
+        />
+      </div>
     </div>
+  );
+}
+
+function CartLine({ item }: { item: CartItem }) {
+  const { increaseQuantity, decreaseQuantity, removeFromCart, maxQuantityFor, lastAdded, closeCart } = useCart();
+  const { formatPrice } = useCurrency();
+  const max = maxQuantityFor(item);
+  const fresh = lastAdded && lastAdded.productId === item.product.id && lastAdded.selectedColor === item.selectedColor;
+  const href = `/products/${item.product.id}`;
+
+  return (
+    <m.li
+      layout="position"
+      exit={{ opacity: 0, x: 40, transition: { duration: 0.19, ease: EASE.in } }}
+      transition={SPRING.layout}
+      className="relative grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3 border-b border-line py-3 last:border-b-0"
+    >
+      {fresh && (
+        <m.span
+          key={lastAdded.at}
+          aria-hidden="true"
+          className="absolute -inset-x-2.5 inset-y-0.5 -z-10 rounded-control bg-flare-tint"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1.2, delay: 0.35, ease: EASE.out }}
+        />
+      )}
+      <Link to={href} onClick={closeCart} className="well block aspect-[4/5] w-16 rounded-control">
+        <img
+          src={getImageUrl(item.selectedColorImage || item.product.image, item.product.category)}
+          onError={imageFallbackHandler(item.product.category)}
+          alt={item.product.name}
+          className="h-full w-full object-cover"
+        />
+      </Link>
+      <div className="grid min-w-0 gap-1">
+        <Link to={href} onClick={closeCart} className="line-clamp-2 text-[0.9375rem] font-semibold leading-tight hover:underline">
+          {item.product.name}
+        </Link>
+        {item.selectedColor && item.selectedColor !== "Standard" && <span className="text-[0.8125rem] text-muted">{item.selectedColor}</span>}
+        <div className="flex items-center gap-3">
+          <div className="inline-flex h-9 items-center rounded-control border border-line-strong">
+            <button
+              type="button"
+              onClick={() => decreaseQuantity(item.product.id, item.selectedColor)}
+              aria-label={`Remove one ${item.product.name}`}
+              className="grid h-9 w-9 place-items-center"
+            >
+              <Minus size={15} />
+            </button>
+            <AnimatedNumber value={item.quantity} className="min-w-6 text-center text-[0.9375rem] font-semibold tabular-nums" />
+            <button
+              type="button"
+              onClick={() => increaseQuantity(item.product.id, item.selectedColor)}
+              disabled={item.quantity >= max}
+              aria-label={`Add one more ${item.product.name}`}
+              className="grid h-9 w-9 place-items-center disabled:opacity-30"
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+          {item.quantity >= max && <span className="text-xs text-warning">Max available</span>}
+        </div>
+      </div>
+      <div className="grid justify-items-end gap-1.5">
+        <AnimatedNumber value={item.product.price * item.quantity} format={formatPrice} className="type-price text-base" />
+        <button
+          type="button"
+          onClick={() => removeFromCart(item.product.id, item.selectedColor)}
+          className="text-[0.8125rem] text-muted underline underline-offset-[3px] hover:text-error"
+        >
+          Remove
+        </button>
+      </div>
+    </m.li>
   );
 }

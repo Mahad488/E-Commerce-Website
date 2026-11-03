@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { AnimatePresence, m } from "motion/react";
 import {
   X,
   Globe,
@@ -12,6 +13,8 @@ import {
 } from "lucide-react";
 import { useCurrency, type Currency } from "../context/CurrencyContext";
 import { useToast } from "../context/ToastContext";
+import { DUR, EASE, SPRING } from "../lib/motion";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 export default function CurrencySidebar() {
   const {
@@ -74,24 +77,24 @@ export default function CurrencySidebar() {
     );
   };
 
-  if (!isDrawerOpen) return null;
-
   const quickPresets = [25, 50, 100, 250, 500, 1000];
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
-      {/* Backdrop with Blur */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
+    <AnimatePresence>
+      {isDrawerOpen && (
+    <div key="currency" className="fixed inset-0 z-[100] flex justify-end" onKeyDown={(e) => e.key === "Escape" && closeDrawer()}>
+      {/* Backdrop */}
+      <m.div
+        className="fixed inset-0 bg-night/55"
         onClick={closeDrawer}
         aria-hidden="true"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { duration: DUR.quick } }}
+        exit={{ opacity: 0, transition: { duration: DUR.quick } }}
       />
 
-      {/* Slide-out Sidebar Drawer */}
-      <aside
-        className="relative w-full max-w-md sm:max-w-lg bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300"
-        aria-label="Currency and Country Prices Drawer"
-      >
+      {/* Slide-out drawer: `sheet` motion, focus trapped while open */}
+      <CurrencyPanel>
         {/* Drawer Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-gray-950 via-neutral-900 to-gray-900 text-white flex items-center justify-between border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
@@ -185,7 +188,7 @@ export default function CurrencySidebar() {
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {activeTab === "checker" ? (
             /* TAB 1: LIVE PRICE CHECKER / CALCULATOR */
-            <div className="space-y-5 animate-in fade-in duration-200">
+            <div className="space-y-5">
               {/* Price Input Box */}
               <div className="bg-gradient-to-br from-gray-900 to-neutral-900 text-white p-5 rounded-3xl shadow-xl border border-gray-800">
                 <div className="flex items-center justify-between mb-3">
@@ -310,7 +313,7 @@ export default function CurrencySidebar() {
             </div>
           ) : (
             /* TAB 2: ALL COUNTRIES LIST WITH SEARCH */
-            <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="space-y-4">
               {/* Search Bar */}
               <div className="relative">
                 <Search
@@ -408,7 +411,28 @@ export default function CurrencySidebar() {
             Done
           </button>
         </div>
-      </aside>
+      </CurrencyPanel>
     </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function CurrencyPanel({ children }: { children: ReactNode }) {
+  const ref = useFocusTrap<HTMLElement>(true);
+  return (
+    <m.aside
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Currency and prices by country"
+      tabIndex={-1}
+      className="relative z-10 flex h-full w-full max-w-md flex-col bg-white shadow-overlay outline-none sm:max-w-lg sm:rounded-l-sheet sm:overflow-hidden"
+      initial={{ x: "100%" }}
+      animate={{ x: 0, transition: SPRING.sheet }}
+      exit={{ x: "100%", transition: { duration: 0.26, ease: EASE.in } }}
+    >
+      {children}
+    </m.aside>
   );
 }

@@ -29,3 +29,6 @@ dist-ssr
 
 # Originals saved before the Claude upgrade (safe to delete once you are happy)
 _backup_before_claude_upgrade/
+
+# Design audit screenshots (large, regenerate locally)
+docs/screenshots/

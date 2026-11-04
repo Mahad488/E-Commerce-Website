@@ -34,6 +34,33 @@ export async function loginRequest(email: string, password: string): Promise<Log
   }
 }
 
+export const GOOGLE_CLIENT_ID =
+  (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) ||
+  "150822118016-e7uafpnnh0oh07pg61u6l94gl1142ek2.apps.googleusercontent.com";
+
+export async function googleLoginRequest(
+  credentialOrToken: { credential?: string; access_token?: string }
+): Promise<LoginResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentialOrToken),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.token || !data.user) {
+      return { ok: false, message: data.message || "Google sign-in failed." };
+    }
+    return { ok: true, user: data.user, token: data.token };
+  } catch {
+    return {
+      ok: false,
+      network: true,
+      message: "Can't reach the server. Make sure the backend is running on port 5000.",
+    };
+  }
+}
+
 /**
  * Where to go after signing in: the page that sent the shopper to /login
  * (via router state or ?redirect=), falling back to the account page.

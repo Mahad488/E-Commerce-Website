@@ -14,11 +14,12 @@ import {
   AlertCircle,
   Truck,
   Heart,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { API_BASE_URL } from "../config/api";
-import { DEMO_CREDENTIALS, getRedirectTarget, loginRequest } from "../lib/auth";
+import { DEMO_CREDENTIALS, getRedirectTarget, loginRequest, GOOGLE_CLIENT_ID, googleLoginRequest } from "../lib/auth";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -150,6 +151,54 @@ export default function Register() {
     navigate(getRedirectTarget(location), { replace: true });
   };
 
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleClick = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any;
+    if (!GOOGLE_CLIENT_ID) {
+      showToast("Google Client ID is missing. Please check your settings.", "error");
+      return;
+    }
+
+    if (!win.google?.accounts) {
+      showToast("Google service is initializing... Please try again in a few seconds.", "info");
+      return;
+    }
+
+    try {
+      const client = win.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: "email profile openid",
+        callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+          if (tokenResponse.error) {
+            console.error("Google popup error:", tokenResponse.error);
+            return;
+          }
+          if (tokenResponse.access_token) {
+            setGoogleLoading(true);
+            setApiError("");
+            const res = await googleLoginRequest({ access_token: tokenResponse.access_token });
+            setGoogleLoading(false);
+            if (res.ok && res.user && res.token) {
+              setSession(res.user, res.token);
+              showToast(`Welcome, ${res.user.name}! 🎉`, "success");
+              navigate(getRedirectTarget(location), { replace: true });
+            } else {
+              setApiError(res.message || "Google sign-in failed.");
+            }
+          }
+        },
+      });
+      client.requestAccessToken();
+    } catch (err) {
+      console.error("Google token client error:", err);
+      try {
+        win.google.accounts.id.prompt();
+      } catch {}
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#faf9f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
       {/* Ambient background glows */}
@@ -263,35 +312,33 @@ export default function Register() {
             <div className="grid grid-cols-2 gap-3 mb-5">
               <button
                 type="button"
-                onClick={() => {
-                  setName("Google User");
-                  setEmail("google.signup@example.com");
-                  setPassword("StrongPass123!");
-                  setConfirmPassword("StrongPass123!");
-                  setAccepted(true);
-                  showToast("Google OAuth simulated! Form auto-filled.", "info");
-                }}
-                className="flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 text-xs sm:text-sm font-bold text-gray-700 transition active:scale-95 shadow-xs"
+                onClick={handleGoogleClick}
+                disabled={googleLoading}
+                className="flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 text-xs sm:text-sm font-bold text-gray-700 transition active:scale-95 shadow-xs disabled:opacity-60 cursor-pointer"
               >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Google</span>
+                {googleLoading ? (
+                  <RefreshCw className="w-4 h-4 text-orange-600 animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                )}
+                <span>{googleLoading ? "Connecting..." : "Google"}</span>
               </button>
 
               <button

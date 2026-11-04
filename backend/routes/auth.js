@@ -183,6 +183,113 @@ router.post("/login", authLimiter, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/google
+ * Authenticates with a Google OAuth ID Token (credential) or Access Token.
+ * Verifies with Google, finds or auto-registers the user, and returns a session JWT.
+ */
+router.post("/google", authLimiter, async (req, res) => {
+  try {
+    const { credential, access_token } = req.body || {};
+
+    if (!credential && !access_token) {
+      return res.status(400).json({
+        success: false,
+        message: "Google credential or access token is required",
+      });
+    }
+
+    let payload = null;
+
+    if (credential) {
+      // Verify Google ID token via Google's tokeninfo API
+      const googleRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`
+      );
+      if (!googleRes.ok) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid or expired Google credential",
+        });
+      }
+      payload = await googleRes.json();
+    } else if (access_token) {
+      // Verify via Google userinfo API
+      const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      if (!googleRes.ok) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid or expired Google access token",
+        });
+      }
+      payload = await googleRes.json();
+    }
+
+    if (!payload || !payload.email) {
+      return res.status(401).json({
+        success: false,
+        message: "Failed to retrieve verified email from Google",
+      });
+    }
+
+    // Check aud if configured
+    const configuredClientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+    if (configuredClientId && payload.aud && payload.aud !== configuredClientId) {
+      console.warn(`[auth] Google aud mismatch: received ${payload.aud}, expected ${configuredClientId}`);
+    }
+
+    const email = String(payload.email).trim().toLowerCase();
+    const name = String(payload.name || payload.given_name || email.split("@")[0]).trim();
+
+    // Check if user already exists
+    const [existing] = await db.execute(
+      "SELECT id, name, email FROM users WHERE email = ?",
+      [email]
+    );
+
+    let user;
+    if (existing.length > 0) {
+      user = existing[0];
+    } else {
+      // Auto-register new user with a random secure password hash
+      const randomPassword = crypto.randomBytes(32).toString("hex");
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+      const [result] = await db.execute(
+        "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+        [name, email, hashedPassword]
+      );
+
+      user = {
+        id: result.insertId,
+        name,
+        email,
+      };
+    }
+
+    const publicUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Signed in with Google successfully",
+      token: createToken(publicUser),
+      user: publicUser,
+    });
+  } catch (error) {
+    console.error("Google auth error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred during Google sign in",
+    });
+  }
+});
+
 router.get("/profile", authenticateToken, async (req, res) => {
   try {
     const [users] = await db.execute(

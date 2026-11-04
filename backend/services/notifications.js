@@ -238,10 +238,29 @@ async function sendContactAutoReply({ name, email, subject, ticketId }) {
   });
 }
 
+/**
+ * Sent to a new customer when they create an account or sign in with Google for the first time.
+ */
+async function sendWelcomeEmail({ email, name }) {
+  const fName = firstName(name).slice(0, 40);
+  await sendEmail({
+    to: email,
+    subject: `Welcome to NOVA, ${fName}! 🎉`,
+    template: "welcome",
+    data: {
+      preheader: "Your account is ready. Enjoy 10% off your first purchase!",
+      firstName: fName,
+      storeUrl: storeUrl(),
+      couponCode: "WELCOME10",
+    },
+  });
+}
+
 module.exports = {
   sendOrderConfirmation,
   sendOrderStatusChanged,
   sendPasswordReset,
   sendContactAutoReply,
+  sendWelcomeEmail,
   notifiesCustomer,
 };

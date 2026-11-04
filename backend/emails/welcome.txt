@@ -1,0 +1,14 @@
+Welcome to NOVA, {{firstName}}!
+
+We're thrilled to have you here. Your account is now active and ready.
+
+SPECIAL WELCOME PERK:
+Get 10% off your first order! Use voucher code {{couponCode}} at checkout.
+
+Start exploring the store:
+{{storeUrl}}
+
+If you ever need help, feel free to reply to this email.
+
+Happy shopping,
+The NOVA Team

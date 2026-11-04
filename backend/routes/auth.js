@@ -8,7 +8,7 @@ const { getUserSecret, isProduction } = require("../config/secrets");
 const { authenticateToken } = require("../middleware/auth");
 const rateLimit = require("../middleware/rateLimit");
 const { queueEmail } = require("../services/email");
-const { sendPasswordReset } = require("../services/notifications");
+const { sendPasswordReset, sendWelcomeEmail } = require("../services/notifications");
 
 const router = express.Router();
 
@@ -98,6 +98,11 @@ router.post("/register", authLimiter, async (req, res) => {
       name: normalizedName,
       email: normalizedEmail,
     };
+
+    // Send Welcome Email to newly registered user
+    queueEmail("welcome email", () =>
+      sendWelcomeEmail({ email: normalizedEmail, name: normalizedName })
+    );
 
     return res.status(201).json({
       success: true,
@@ -267,6 +272,11 @@ router.post("/google", authLimiter, async (req, res) => {
         name,
         email,
       };
+
+      // Send Welcome Email only on first-time registration with Google
+      queueEmail("welcome email", () =>
+        sendWelcomeEmail({ email, name })
+      );
     }
 
     const publicUser = {

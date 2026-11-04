@@ -50,6 +50,8 @@ admin/
 │   ├── AdminAnalytics.tsx        # Overview tab: revenue chart, top products, low stock, inbox
 │   ├── AdminLogin.tsx            # Admin sign-in
 │   ├── AdminPortalData.tsx       # Admin Data Hub & Export utility
+│   ├── ImageUploader.tsx         # Drag & drop photo uploader (main photo + colour variants)
+│   ├── uploadImage.ts            # Upload request with progress + client-side file checks
 │   ├── index.ts                  # Barrel export
 │   └── src/
 │       ├── App.tsx               # Route guard: '/' opens Admin Login (or Dashboard if logged in)
@@ -61,6 +63,7 @@ admin/
     ├── adminOrders.js            # Orders list & status transition endpoints
     ├── adminProducts.js          # Products create, update, delete endpoints
     ├── adminStats.js             # Dashboard analytics (revenue by day, top products, low stock, inbox)
+    ├── adminUploads.js           # Product photo uploads (multer + storage service)
     └── index.js                  # Unified router & middleware export
 ```
 
@@ -75,6 +78,7 @@ Mounted under `/api/admin`:
 - `POST /api/admin/products`
 - `PUT /api/admin/products/:id`
 - `DELETE /api/admin/products/:id`
+- `POST /api/admin/uploads` — upload one product photo (`multipart/form-data`, field `image`, JPEG/PNG/WebP up to 3 MB) → `{ success: true, url: "/uploads/products/<uuid>.<ext>" }`
 - `GET /api/admin/stats?days=14` — revenue by day, totals, top products, category revenue, low stock, recent contact messages
 - `PATCH /api/admin/stats/messages/:id/read` — mark a contact message as read
 - `GET /api/admin/profile` · `PUT /api/admin/change-password`

@@ -26,6 +26,7 @@ A complete online store built with **React 19 + TypeScript + Vite + Tailwind CSS
 - **Overview dashboard**: revenue/orders/AOV/customers, **daily revenue chart** (7/14/30 days, hover tooltips, table view), orders by status, top products, revenue by category, **low-stock alerts**, **contact inbox**
 - Order management with status changes (stock is restored/re-deducted when cancelling/un-cancelling; COD orders are marked paid on delivery)
 - Product catalogue CRUD with colour variants and sale prices
+- **Photo uploads**: drag and drop (or pick) a JPEG, PNG or WebP up to 3 MB for the main photo and for each colour, with a preview, upload progress, Change / Remove, and an *Or paste image URL instead* option. Saving waits for any upload still running
 - Change admin username/password
 
 ### Backend
@@ -35,6 +36,7 @@ A complete online store built with **React 19 + TypeScript + Vite + Tailwind CSS
 - bcrypt password hashing, JWT auth for customers and admins (separate secrets)
 - In-memory **rate limiting** on login, registration, password recovery and public forms
 - Consistent JSON errors (404 for unknown routes, 400 for malformed JSON)
+- Image uploads checked by their real file signature (not just the declared type), stored with random UUID names and served from `/uploads` with long-lived caching. Storage is pluggable through `STORAGE_DRIVER`
 
 ---
 
@@ -75,6 +77,13 @@ npm run dev:admin
 The admin portal is also available inside the storefront at **`/admin-login`**.
 
 If your API isn't on `http://localhost:5000`, create a root `.env` with `VITE_API_URL=http://your-api-host`.
+
+### Product photos
+Photos uploaded in the admin are saved to `backend/uploads/products/` and stored on the product as a relative path such as `/uploads/products/<uuid>.webp`. The storefront turns that into a full URL with `getImageUrl()` (prefixing `VITE_API_URL`). The folder is git-ignored except for its `.gitkeep`, so back it up (or switch to cloud storage) when you deploy.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STORAGE_DRIVER` | `local` | Where uploaded images go. Only `local` exists today; add a Cloudinary or S3 driver in `backend/services/storage.js` (a driver saves the file and returns its public URL) |
 
 ---
 
@@ -134,9 +143,10 @@ ecommerce-website/
     ├── config/               # db.js, secrets.js
     ├── database/             # schema.sql, migrate.js, seed.js, setup.js
     ├── middleware/           # authMiddleware.js, rateLimit.js
-    ├── services/             # orderService.js (stock, coupons, status changes)
+    ├── services/             # orderService.js (stock, coupons, status changes), storage.js (image uploads)
+    ├── uploads/products/     # Uploaded product photos (git-ignored)
     ├── routes/               # auth, products, orders, store (coupons/newsletter/contact)
-    └── admin/                # adminAuth, adminOrders, adminProducts, adminStats
+    └── admin/                # adminAuth, adminOrders, adminProducts, adminStats, adminUploads
 ```
 
 ---
@@ -164,6 +174,8 @@ ecommerce-website/
 | GET | `/api/admin/stats?days=14` | admin | Dashboard analytics |
 | GET / PATCH | `/api/admin/orders` · `/api/admin/orders/:id/status` | admin | Orders |
 | POST / PUT / DELETE | `/api/products` · `/api/products/:id` | admin | Manage products |
+| POST | `/api/admin/uploads` | admin | Upload one product photo: `multipart/form-data` with the file in `image` (JPEG/PNG/WebP, max 3 MB). Returns `{ success, url }`; errors are 413 (too big), 415 (wrong type) or 400 (no file) |
+| GET | `/uploads/products/<file>` | — | Uploaded photos (static) |
 | GET | `/api/health` | — | API + database health |
 
 ---
@@ -181,5 +193,6 @@ ecommerce-website/
 ## 🛡 Before going live
 - Set `NODE_ENV=production`, long random `JWT_SECRET` / `ADMIN_SECRET`, and `CLIENT_URL` (CORS allow-list).
 - Change the default admin password.
+- Uploaded photos live on the API server's disk (`backend/uploads/`). On hosts with a temporary file system (Render, Railway, Heroku) mount a persistent volume there or add a cloud `STORAGE_DRIVER`, otherwise photos vanish on redeploy.
 - Connect a real email provider for password-reset codes (see `routes/auth.js`) and a real payment gateway (card/wallet payments are simulated).
 - Have the Privacy and Terms pages reviewed — they're plain-language templates.

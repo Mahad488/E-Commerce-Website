@@ -33,6 +33,7 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { API_BASE_URL } from "../config/api";
+import { getImageUrl } from "../lib/catalog";
 
 interface ProfileUser {
   id: number;
@@ -600,7 +601,7 @@ export default function Account() {
                                   className="bg-white p-2.5 rounded-xl border border-gray-200/70 flex items-center gap-3 shadow-2xs"
                                 >
                                   <img
-                                    src={item.color_image || item.product_image || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600"}
+                                    src={getImageUrl(item.color_image || item.product_image)}
                                     alt={item.product_name || "Product"}
                                     className="w-12 h-12 object-cover rounded-lg border bg-gray-50 shrink-0"
                                     onError={(e) => {
@@ -1166,7 +1167,7 @@ export default function Account() {
                       <div className="flex items-center gap-3">
                         {item.color_image || item.product_image ? (
                           <img
-                            src={item.color_image || item.product_image}
+                            src={getImageUrl(item.color_image || item.product_image)}
                             alt={item.product_name}
                             className="w-14 h-14 object-cover rounded-xl border bg-gray-100 shrink-0"
                             onError={(e) => {

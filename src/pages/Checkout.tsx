@@ -464,7 +464,7 @@ function Checkout() {
                       <div className="flex items-center gap-2.5">
                         {it.image && (
                           <img
-                            src={it.image}
+                            src={getImageUrl(it.image)}
                             alt={it.name}
                             className="w-9 h-9 object-cover rounded-lg border bg-gray-50 shrink-0"
                           />

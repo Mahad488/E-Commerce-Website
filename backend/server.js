@@ -12,6 +12,7 @@ const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
 const storeRoutes = require("./routes/store");
 const { adminRouter } = require("./admin");
+const { UPLOADS_ROOT } = require("./services/storage");
 
 const app = express();
 
@@ -23,7 +24,16 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
 app.use(cors(allowedOrigins.length ? { origin: allowedOrigins } : undefined));
 
 app.use(express.json({ limit: "1mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Uploaded images have random UUID names, so they never change and can be cached for a long time.
+app.use(
+  "/uploads",
+  express.static(UPLOADS_ROOT, {
+    index: false,
+    maxAge: "30d",
+    immutable: true,
+    setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff"),
+  })
+);
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api/auth", authRoutes);

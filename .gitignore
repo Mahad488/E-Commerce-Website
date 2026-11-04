@@ -32,3 +32,9 @@ _backup_before_claude_upgrade/
 
 # Design audit screenshots (large, regenerate locally)
 docs/screenshots/
+
+# Uploaded product images (keep the folder, ignore the files)
+backend/uploads/*
+!backend/uploads/products/
+backend/uploads/products/*
+!backend/uploads/products/.gitkeep

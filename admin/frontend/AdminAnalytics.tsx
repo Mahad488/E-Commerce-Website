@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { API_BASE_URL } from "../../src/config/api";
+import { getImageUrl } from "../../src/lib/catalog";
 
 interface DayPoint {
   date: string;
@@ -420,7 +421,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
             <ul className="divide-y">
               {stats.lowStock.map((p) => (
                 <li key={p.id} className="py-2.5 flex items-center gap-3">
-                  <img src={p.image} alt="" className="w-10 h-10 rounded-xl object-cover bg-gray-100" />
+                  <img src={getImageUrl(p.image, p.category)} alt="" className="w-10 h-10 rounded-xl object-cover bg-gray-100" />
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm font-semibold truncate">{p.name}</span>
                     <span className="block text-xs text-gray-400">{p.category}</span>

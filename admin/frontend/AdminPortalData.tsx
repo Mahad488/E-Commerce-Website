@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState, useMemo } from "react";
+import { getImageUrl } from "../../src/lib/catalog";
 import {
   Package,
   DollarSign,
@@ -687,7 +688,7 @@ export default function AdminPortalData() {
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={p.image}
+                            src={getImageUrl(p.image, p.category)}
                             alt={p.name}
                             className="w-10 h-10 object-cover rounded-lg border border-slate-700 shrink-0"
                           />
@@ -922,7 +923,7 @@ export default function AdminPortalData() {
                 >
                   <div className="flex items-center gap-3">
                     <img
-                      src={item.product_image || "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=200"}
+                      src={getImageUrl(item.product_image)}
                       alt={item.product_name}
                       className="w-10 h-10 rounded-lg object-cover border border-slate-700"
                     />

@@ -45,7 +45,9 @@ import {
 
 import { API_BASE_URL } from "../../src/config/api";
 import AdminAnalytics from "./AdminAnalytics";
+import ImageUploader from "./ImageUploader";
 import { useToast } from "../../src/context/ToastContext";
+import { getImageUrl } from "../../src/lib/catalog";
 import { products as fallbackProducts, type Product, type ProductColorVariant } from "../../src/data/products";
 
 const PRESET_COLORS = [
@@ -225,6 +227,10 @@ export default function Admin() {
   // Color Variants State for New and Edit Product
   const [newColors, setNewColors] = useState<ProductColorVariant[]>([]);
   const [editColors, setEditColors] = useState<ProductColorVariant[]>([]);
+
+  // Photo uploads still running; the product forms wait for them before saving.
+  const [uploadsInFlight, setUploadsInFlight] = useState(0);
+  const trackUpload = (busy: boolean) => setUploadsInFlight((n) => Math.max(0, n + (busy ? 1 : -1)));
 
   // Color Handlers for New Product Form
   const handleAddPresetColorNew = (preset: { name: string; hex: string }) => {
@@ -437,6 +443,10 @@ export default function Admin() {
     if (!editingProduct) return;
     if (!editName.trim() || !editPrice) {
       showToast("Product name and price are required", "error");
+      return;
+    }
+    if (uploadsInFlight > 0) {
+      showToast("Wait for the photo upload to finish, then save.", "info");
       return;
     }
 
@@ -698,6 +708,10 @@ export default function Admin() {
     e.preventDefault();
     if (!name || !price) {
       showToast("Please enter product name and price", "error");
+      return;
+    }
+    if (uploadsInFlight > 0) {
+      showToast("Wait for the photo upload to finish, then save.", "info");
       return;
     }
     const token = localStorage.getItem("nova_admin_token");
@@ -1145,7 +1159,7 @@ export default function Admin() {
                                   <div key={it.id} className="flex items-center gap-2">
                                     {it.color_image || it.product_image ? (
                                       <img
-                                        src={it.color_image || it.product_image}
+                                        src={getImageUrl(it.color_image || it.product_image)}
                                         alt=""
                                         className="w-7 h-7 object-cover rounded-md border bg-gray-50 shrink-0"
                                       />
@@ -1756,7 +1770,7 @@ export default function Admin() {
                                 {/* Product info */}
                                 <td className="py-4 px-6 flex items-center gap-3">
                                   <img
-                                    src={p.image}
+                                    src={getImageUrl(p.image, p.category)}
                                     alt={p.name}
                                     className="w-12 h-12 object-cover rounded-xl border border-gray-200 bg-gray-100 shrink-0"
                                   />
@@ -1978,15 +1992,14 @@ export default function Admin() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                    Image URL (Unsplash or Static Link)
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/photo-..."
+                  <span className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                    Product Photo
+                  </span>
+                  <ImageUploader
                     value={image}
-                    onChange={(e) => setImage(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-orange-500"
+                    onChange={setImage}
+                    label="Product photo"
+                    onBusyChange={trackUpload}
                   />
                 </div>
 
@@ -2119,25 +2132,14 @@ export default function Admin() {
                           </div>
 
                           {/* Specific Photo for this color */}
-                          <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                            <input
-                              type="url"
-                              placeholder="Photo URL for this color (Unsplash or image link)"
+                          <div className="pt-2 border-t border-gray-100">
+                            <ImageUploader
+                              compact
                               value={col.image || ""}
-                              onChange={(e) => handleUpdateColorNew(idx, "image", e.target.value)}
-                              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 outline-none focus:border-orange-500 bg-gray-50/50"
+                              onChange={(url) => handleUpdateColorNew(idx, "image", url)}
+                              label={`Photo for ${col.name || "this color"}`}
+                              onBusyChange={trackUpload}
                             />
-                            {col.image && (
-                              <img
-                                src={col.image}
-                                alt={col.name}
-                                className="w-8 h-8 object-cover rounded-lg border border-gray-200 bg-gray-100 shrink-0"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600";
-                                }}
-                              />
-                            )}
                           </div>
                         </div>
                       ))}
@@ -2147,9 +2149,10 @@ export default function Admin() {
 
                 <button
                   type="submit"
-                  className="w-full bg-black text-white py-4 rounded-full font-bold text-sm hover:bg-orange-500 transition shadow-lg"
+                  disabled={uploadsInFlight > 0}
+                  className="w-full bg-black text-white py-4 rounded-full font-bold text-sm hover:bg-orange-500 transition shadow-lg disabled:opacity-50 disabled:hover:bg-black"
                 >
-                  Create Product
+                  {uploadsInFlight > 0 ? "Waiting for photo upload…" : "Create Product"}
                 </button>
               </form>
             </div>
@@ -2429,7 +2432,7 @@ export default function Admin() {
                       <div className="flex items-center gap-3">
                         {item.color_image || item.product_image ? (
                           <img
-                            src={item.color_image || item.product_image}
+                            src={getImageUrl(item.color_image || item.product_image)}
                             alt={item.product_name}
                             className="w-12 h-12 object-cover rounded-xl border bg-gray-100 shrink-0"
                           />
@@ -2520,7 +2523,7 @@ export default function Admin() {
             {/* Live Preview Card */}
             <div className="bg-gray-50 border border-gray-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4">
               <img
-                src={editImage || "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600"}
+                src={getImageUrl(editImage, editCategory)}
                 alt={editName || "Product Preview"}
                 className="w-16 h-16 object-cover rounded-xl border border-gray-200 bg-white shrink-0"
                 onError={(e) => {
@@ -2716,17 +2719,16 @@ export default function Admin() {
                 </div>
               </div>
 
-              {/* Image URL */}
+              {/* Product Photo */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                  Product Image URL
-                </label>
-                <input
-                  type="url"
+                <span className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                  Product Photo
+                </span>
+                <ImageUploader
                   value={editImage}
-                  onChange={(e) => setEditImage(e.target.value)}
-                  placeholder="https://images.unsplash.com/photo-..."
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-medium outline-none focus:border-orange-500"
+                  onChange={setEditImage}
+                  label="Product photo"
+                  onBusyChange={trackUpload}
                 />
               </div>
 
@@ -2860,25 +2862,14 @@ export default function Admin() {
                         </div>
 
                         {/* Specific Photo for this color */}
-                        <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                          <input
-                            type="url"
-                            placeholder="Specific photo URL for this color"
+                        <div className="pt-2 border-t border-gray-100">
+                          <ImageUploader
+                            compact
                             value={col.image || ""}
-                            onChange={(e) => handleUpdateColorEdit(idx, "image", e.target.value)}
-                            className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 outline-none focus:border-orange-500 bg-gray-50/50"
+                            onChange={(url) => handleUpdateColorEdit(idx, "image", url)}
+                            label={`Photo for ${col.name || "this color"}`}
+                            onBusyChange={trackUpload}
                           />
-                          {col.image && (
-                            <img
-                              src={col.image}
-                              alt={col.name}
-                              className="w-8 h-8 object-cover rounded-lg border border-gray-200 bg-gray-100 shrink-0"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  "https://images.unsplash.com/photo-1560343090-f0409e92791a?w=600";
-                              }}
-                            />
-                          )}
                         </div>
                       </div>
                     ))}
@@ -2897,11 +2888,15 @@ export default function Admin() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isEditSaving}
+                  disabled={isEditSaving || uploadsInFlight > 0}
                   className="inline-flex items-center gap-2 bg-black hover:bg-orange-500 text-white px-6 py-2.5 rounded-full text-xs font-bold transition shadow-md disabled:opacity-50"
                 >
                   <Save size={14} />
-                  {isEditSaving ? "Saving Changes..." : "Save Product & Sales"}
+                  {isEditSaving
+                    ? "Saving Changes..."
+                    : uploadsInFlight > 0
+                    ? "Waiting for photo upload…"
+                    : "Save Product & Sales"}
                 </button>
               </div>
             </form>

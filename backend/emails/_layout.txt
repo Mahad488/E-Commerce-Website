@@ -1,0 +1,7 @@
+NOVA
+
+{{{content}}}
+
+--
+Questions? Reply to this email or write to {{supportEmail}}.
+NOVA · {{storeUrl}}

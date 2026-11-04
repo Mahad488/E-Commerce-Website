@@ -1,26 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  CheckCircle,
-  ShoppingBag,
-  ShieldCheck,
-  Truck,
-  CreditCard,
-  Banknote,
-  Wallet,
-  Lock,
-  Smartphone,
-  CheckCircle2,
-  X,
-  Sparkles,
-  Printer,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle, ShoppingBag, ShieldCheck, Truck, CreditCard, Banknote, Lock, CheckCircle2, Printer } from "lucide-react";
 
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import OrderInvoiceModal from "../components/OrderInvoiceModal";
 import CouponBox from "../components/CouponBox";
+import EmailNotice from "../components/EmailNotice";
 
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
@@ -58,6 +44,11 @@ const COUNTRIES = [
   "Other",
 ];
 
+interface CardPaymentConfig {
+  enabled: boolean;
+  testMode: boolean;
+}
+
 function Checkout() {
   const { items, subtotal, discount, shipping, total, coupon, clearCart } = useCart();
   const { currentCurrency, formatPrice } = useCurrency();
@@ -86,6 +77,8 @@ function Checkout() {
     payment: string;
     paymentStatus?: string;
     transactionId?: string;
+    /** Where the API is sending the order confirmation. */
+    confirmationEmail?: string | null;
     items?: Array<{
       name: string;
       quantity: number;
@@ -97,20 +90,8 @@ function Checkout() {
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
-  // Card Payment Form States
-  const [cardHolder, setCardHolder] = useState(user?.name || "");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvc, setCardCvc] = useState("");
-
-  // Mobile Wallet States (JazzCash / EasyPaisa)
-  const [walletProvider, setWalletProvider] = useState<"JazzCash" | "EasyPaisa">("JazzCash");
-  const [walletMobile, setWalletMobile] = useState(user?.phone || "");
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpValue, setOtpValue] = useState("");
-  const [otpCountdown, setOtpCountdown] = useState(59);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [otpError, setOtpError] = useState("");
+  // Card payments go through Stripe Checkout; the API says whether they're switched on.
+  const [cardPayments, setCardPayments] = useState<CardPaymentConfig | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -128,80 +109,73 @@ function Checkout() {
         .then((data) => {
           if (data.success && data.user) {
             if (data.user.address) setAddress((prev) => prev || data.user.address);
-            if (data.user.phone) {
-              setMobileNumber((prev) => prev || data.user.phone);
-              setWalletMobile((prev) => prev || data.user.phone);
-            }
+            if (data.user.phone) setMobileNumber((prev) => prev || data.user.phone);
             if (data.user.city) setCity((prev) => prev || data.user.city);
             if (data.user.country) setCountry((prev) => (prev === "Pakistan" && data.user.country ? data.user.country : prev));
-            if (data.user.name) setCardHolder((prev) => prev || data.user.name);
           }
         })
         .catch(() => {});
     }
   }, [token]);
 
-  // OTP Countdown Timer
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    if (showOtpModal && otpCountdown > 0) {
-      timer = setInterval(() => {
-        setOtpCountdown((c) => c - 1);
-      }, 1000);
+    fetch(`${API_BASE_URL}/api/payments/config`)
+      .then((res) => res.json())
+      .then((data) => setCardPayments(data.card ?? { enabled: false, testMode: true }))
+      .catch(() => setCardPayments({ enabled: false, testMode: true }));
+  }, []);
+
+  // The server recalculates prices, stock, coupon and shipping from this; it never trusts totals.
+  const orderPayload = () => ({
+    items: items.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+      color: item.selectedColor || item.product.colors?.[0]?.name || "Standard",
+      color_image: item.selectedColorImage || item.product.image || null,
+    })),
+    address: address.trim(),
+    mobile_number: mobileNumber.trim(),
+    city: city.trim(),
+    country: country.trim(),
+    coupon_code: coupon && subtotal >= coupon.minOrder ? coupon.code : null,
+  });
+
+  const readableError = (caught: unknown, fallback: string) => {
+    const message = caught instanceof Error ? caught.message : "";
+    return message === "Failed to fetch"
+      ? "Can't reach the server. Make sure the backend is running, then try again."
+      : message || fallback;
+  };
+
+  /** Creates the order and sends the shopper to Stripe's hosted payment page. */
+  const startCardPayment = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/payments/create-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(orderPayload()),
+      });
+      const data = await response.json();
+      if (response.status === 401) throw new Error("Your session has expired. Please sign in again to pay.");
+      if (!response.ok || !data.url) throw new Error(data.message || "Couldn't open the card payment page.");
+      // Leave loading on: the browser is about to leave for Stripe. The cart is cleared on
+      // /checkout/result once the payment is confirmed.
+      window.location.assign(data.url);
+    } catch (caught) {
+      setError(readableError(caught, "Couldn't open the card payment page."));
+      setLoading(false);
     }
-    return () => clearInterval(timer);
-  }, [showOtpModal, otpCountdown]);
-
-  // Card helpers
-  const getCardBrand = (num: string) => {
-    const clean = num.replace(/\D/g, "");
-    if (clean.startsWith("4")) return "Visa";
-    if (/^(5[1-5]|2[2-7])/.test(clean)) return "Mastercard";
-    if (/^(34|37)/.test(clean)) return "Amex";
-    return "Card";
   };
 
-  const handleCardNumberInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 16);
-    const formatted = raw.replace(/(\d{4})/g, "$1 ").trim();
-    setCardNumber(formatted);
-  };
-
-  const handleExpiryInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
-    if (raw.length <= 2) {
-      setCardExpiry(raw);
-    } else {
-      setCardExpiry(`${raw.slice(0, 2)}/${raw.slice(2)}`);
-    }
-  };
-
-  const handleCvcInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
-    setCardCvc(raw);
-  };
-
-  // Execution function for placing orders in database
-  const executeOrderPlacement = async (selectedMethod: string, paymentDetails?: Record<string, string> | null) => {
+  // Cash on delivery: the order is placed straight away.
+  const executeOrderPlacement = async () => {
     try {
       setLoading(true);
       setError("");
 
-      const payload = {
-        items: items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          color: item.selectedColor || (item.product.colors?.[0]?.name) || "Standard",
-          color_image: item.selectedColorImage || item.product.image || null,
-        })),
-        address: address.trim(),
-        mobile_number: mobileNumber.trim(),
-        city: city.trim(),
-        country: country.trim(),
-        payment_method: selectedMethod,
-        payment_details: paymentDetails || null,
-        coupon_code: coupon && subtotal >= coupon.minOrder ? coupon.code : null,
-      };
+      const payload = { ...orderPayload(), payment_method: "cod" };
 
       const response = await fetch(`${API_BASE_URL}/api/orders`, {
         method: "POST",
@@ -230,15 +204,10 @@ function Checkout() {
         couponCode: data.coupon_code,
         address: `${address.trim()}, ${city.trim()}, ${country.trim()}`,
         mobile: mobileNumber.trim(),
-        payment: data.payment_method || (
-          selectedMethod === "cod"
-            ? "Cash on Delivery (COD)"
-            : selectedMethod === "card"
-            ? `Credit / Debit Card (${paymentDetails?.cardBrand || "Card"})`
-            : `Mobile Wallet (${paymentDetails?.walletProvider || "JazzCash / EasyPaisa"})`
-        ),
-        paymentStatus: data.payment_status || (selectedMethod === "cod" ? "Pending" : "Paid"),
-        transactionId: data.transaction_id || paymentDetails?.transactionId || null,
+        payment: data.payment_method || "Cash on Delivery (COD)",
+        paymentStatus: data.payment_status || "Pending",
+        transactionId: data.transaction_id || null,
+        confirmationEmail: data.confirmation_email || null,
         items: items.map((it) => ({
           name: it.product.name,
           quantity: it.quantity,
@@ -251,13 +220,8 @@ function Checkout() {
       clearCart();
       showToast("Order placed successfully! 🎉", "success");
     } catch (caught) {
-      const err = caught as Error;
-      console.error("Checkout page error:", err);
-      setError(
-        err.message === "Failed to fetch"
-          ? "Can't reach the server. Make sure the backend is running, then try again."
-          : err.message || "An error occurred while placing your order."
-      );
+      console.error("Checkout page error:", caught);
+      setError(readableError(caught, "An error occurred while placing your order."));
     } finally {
       setLoading(false);
     }
@@ -276,79 +240,16 @@ function Checkout() {
       return;
     }
 
-    // Validation for Credit / Debit Card
     if (paymentMethod === "card") {
-      if (!cardHolder.trim()) {
-        setError("Please enter the cardholder's full name.");
+      if (!cardPayments?.enabled) {
+        setError("Card payments aren't available right now. Choose cash on delivery.");
         return;
       }
-      const rawNum = cardNumber.replace(/\D/g, "");
-      if (rawNum.length !== 16) {
-        setError("Please enter a valid 16-digit card number.");
-        return;
-      }
-      if (cardExpiry.length !== 5) {
-        setError("Please enter a valid card expiry date (MM/YY).");
-        return;
-      }
-      const [expMonth] = cardExpiry.split("/").map(Number);
-      if (!expMonth || expMonth < 1 || expMonth > 12) {
-        setError("Invalid expiry month on card (01 to 12).");
-        return;
-      }
-      if (cardCvc.length < 3) {
-        setError("Please enter a valid 3 or 4 digit CVV/CVC.");
-        return;
-      }
-
-      await executeOrderPlacement("card", {
-        cardBrand: getCardBrand(cardNumber),
-        cardHolder: cardHolder.trim(),
-        transactionId: `TXN-CARD-${Math.floor(100000 + Math.random() * 900000)}`,
-      });
+      await startCardPayment();
       return;
     }
 
-    // Validation for Mobile Wallet (JazzCash / EasyPaisa)
-    if (paymentMethod === "wallet") {
-      const cleanWallet = walletMobile.replace(/\D/g, "");
-      if (cleanWallet.length !== 11 || !cleanWallet.startsWith("03")) {
-        setError(`Please enter a valid 11-digit ${walletProvider} mobile number starting with 03 (e.g. 03001234567).`);
-        return;
-      }
-
-      // Open interactive MPIN / OTP authorization modal
-      setError("");
-      setOtpValue("");
-      setOtpError("");
-      setOtpCountdown(59);
-      setShowOtpModal(true);
-      return;
-    }
-
-    // Cash on Delivery
-    await executeOrderPlacement("cod", null);
-  };
-
-  const handleVerifyOtpAndPay = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otpValue.trim().length !== 4) {
-      setOtpError("Please enter your 4-digit approval MPIN / OTP.");
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    setOtpError("");
-
-    setTimeout(async () => {
-      setIsVerifyingOtp(false);
-      setShowOtpModal(false);
-      await executeOrderPlacement("wallet", {
-        walletProvider,
-        walletMobile: walletMobile.trim(),
-        transactionId: `TXN-${walletProvider.toUpperCase().slice(0, 4)}-${Math.floor(100000 + Math.random() * 900000)}`,
-      });
-    }, 1200);
+    await executeOrderPlacement();
   };
 
   if (orderSuccess) {
@@ -368,6 +269,13 @@ function Checkout() {
           <p className="text-gray-600 mt-3 text-lg">
             Your order <span className="font-bold text-black">#{orderSuccess.id}</span> has been placed successfully and is being processed.
           </p>
+
+          {orderSuccess.confirmationEmail && (
+            <EmailNotice className="mx-auto mt-6 max-w-lg">
+              A confirmation email is on its way to <strong>{orderSuccess.confirmationEmail}</strong>. We'll email you again
+              when your order ships.
+            </EmailNotice>
+          )}
 
           <div className="bg-gray-50 rounded-3xl p-6 md:p-8 mt-8 border text-left space-y-4 max-w-lg mx-auto">
             <h3 className="font-bold text-lg border-b pb-3 text-gray-900">
@@ -717,8 +625,11 @@ function Checkout() {
                     Payment Method
                   </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Payment method">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={paymentMethod === "cod"}
                       onClick={() => setPaymentMethod("cod")}
                       className={`cursor-pointer border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-center transition ${
                         paymentMethod === "cod"
@@ -728,231 +639,47 @@ function Checkout() {
                     >
                       <Banknote size={22} />
                       <span className="text-xs">Cash on Delivery</span>
-                    </label>
+                    </button>
 
-                    <label
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={paymentMethod === "card"}
+                      disabled={cardPayments !== null && !cardPayments.enabled}
                       onClick={() => setPaymentMethod("card")}
-                      className={`cursor-pointer border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-center transition ${
+                      className={`cursor-pointer border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-center transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         paymentMethod === "card"
                           ? "border-orange-500 bg-orange-50 text-orange-600 font-bold"
                           : "border-gray-200 hover:bg-gray-50 text-gray-600"
                       }`}
                     >
                       <CreditCard size={22} />
-                      <span className="text-xs">Credit / Debit Card</span>
-                    </label>
-
-                    <label
-                      onClick={() => setPaymentMethod("wallet")}
-                      className={`cursor-pointer border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 text-center transition ${
-                        paymentMethod === "wallet"
-                          ? "border-orange-500 bg-orange-50 text-orange-600 font-bold"
-                          : "border-gray-200 hover:bg-gray-50 text-gray-600"
-                      }`}
-                    >
-                      <Wallet size={22} />
-                      <span className="text-xs">JazzCash / Wallet</span>
-                    </label>
+                      <span className="text-xs">Card (secure payment by Stripe)</span>
+                    </button>
                   </div>
 
-                  {/* 1. CREDIT / DEBIT CARD PANEL */}
-                  {paymentMethod === "card" && (
-                    <div className="mt-5 p-5 bg-gradient-to-br from-gray-50 to-gray-100/70 border border-gray-200 rounded-2xl space-y-4 animate-fadeIn">
-                      <div className="flex items-center justify-between border-b pb-3">
-                        <div className="flex items-center gap-2">
-                          <CreditCard size={18} className="text-orange-500" />
-                          <h4 className="font-bold text-sm text-gray-900">Card Payment Details</h4>
-                        </div>
-                        <span className="text-[11px] font-bold text-gray-500 bg-white border px-2.5 py-0.5 rounded-full">
-                          {getCardBrand(cardNumber)} Secure 256-Bit SSL
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                        <strong>Demo store:</strong> card payments are simulated and nothing is charged. Use a test
-                        number such as <span className="font-mono">4242 4242 4242 4242</span> — never a real card.
-                      </p>
-
-                      {/* Visual Mock Credit Card Widget */}
-                      <div className="relative w-full max-w-sm mx-auto h-44 rounded-2xl bg-gradient-to-tr from-neutral-900 via-gray-800 to-stone-900 text-white p-5 shadow-xl flex flex-col justify-between overflow-hidden border border-white/10">
-                        <div className="absolute top-0 right-0 w-36 h-36 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
-                        
-                        <div className="flex justify-between items-start z-10">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-6 rounded bg-amber-400/80 border border-amber-200/40 shadow-inner flex items-center justify-center">
-                              <div className="w-5 h-3 border border-amber-600/50 rounded-sm" />
-                            </div>
-                            <span className="text-[10px] tracking-widest uppercase text-gray-300 font-bold">
-                              NOVA PAY
-                            </span>
-                          </div>
-                          <span className="text-sm font-black italic tracking-wider text-orange-400">
-                            {getCardBrand(cardNumber)}
-                          </span>
-                        </div>
-
-                        <div className="z-10">
-                          <p className="font-mono text-lg tracking-widest text-white/90 drop-shadow">
-                            {cardNumber || "•••• •••• •••• ••••"}
-                          </p>
-                        </div>
-
-                        <div className="flex justify-between items-end z-10 text-xs">
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wider text-gray-400 font-medium">Cardholder</p>
-                            <p className="font-bold tracking-wide uppercase truncate max-w-[170px]">
-                              {cardHolder || "YOUR NAME"}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[9px] uppercase tracking-wider text-gray-400 font-medium">Expires</p>
-                            <p className="font-bold font-mono">{cardExpiry || "MM/YY"}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card Input Fields */}
-                      <div className="space-y-3.5 pt-2">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                            Name on Card
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Full name as printed on card"
-                            value={cardHolder}
-                            onChange={(e) => setCardHolder(e.target.value)}
-                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 transition"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                            Card Number (16 Digits)
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              placeholder="0000 0000 0000 0000"
-                              value={cardNumber}
-                              onChange={handleCardNumberInput}
-                              maxLength={19}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 font-mono transition pr-20"
-                            />
-                            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded">
-                              {getCardBrand(cardNumber)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                              Expiry Date
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="MM/YY"
-                              value={cardExpiry}
-                              onChange={handleExpiryInput}
-                              maxLength={5}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 font-mono transition text-center"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                              CVV / CVC
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="password"
-                                placeholder="3 or 4 digits"
-                                value={cardCvc}
-                                onChange={handleCvcInput}
-                                maxLength={4}
-                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 font-mono transition text-center pr-8"
-                              />
-                              <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  {cardPayments !== null && !cardPayments.enabled && (
+                    <p className="mt-3 text-xs text-gray-500">Card payments aren't set up on this store yet, so orders are cash on delivery.</p>
                   )}
 
-                  {/* 2. MOBILE WALLET PANEL (JazzCash / EasyPaisa) */}
-                  {paymentMethod === "wallet" && (
-                    <div className="mt-5 p-5 bg-gradient-to-br from-orange-50/60 to-amber-50/40 border border-orange-200 rounded-2xl space-y-4 animate-fadeIn">
-                      <div className="flex items-center justify-between border-b border-orange-200/60 pb-3">
-                        <div className="flex items-center gap-2">
-                          <Smartphone size={18} className="text-orange-600" />
-                          <h4 className="font-bold text-sm text-gray-900">Mobile Wallet Payment</h4>
-                        </div>
-                        <span className="text-[11px] font-bold text-orange-700 bg-white border border-orange-200 px-2.5 py-0.5 rounded-full">
-                          Instant MPIN / OTP
-                        </span>
-                      </div>
-
-                      {/* Wallet Provider Selector */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
-                          Choose Mobile Wallet Provider
-                        </label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setWalletProvider("JazzCash")}
-                            className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition ${
-                              walletProvider === "JazzCash"
-                                ? "bg-red-600 text-white border-red-600 shadow-md shadow-red-500/20"
-                                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                            JazzCash
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setWalletProvider("EasyPaisa")}
-                            className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition ${
-                              walletProvider === "EasyPaisa"
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/20"
-                                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            <span className="w-2.5 h-2.5 rounded-full bg-white" />
-                            EasyPaisa
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Wallet Mobile Number */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                          {walletProvider} Mobile Account Number
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="tel"
-                            placeholder="03001234567"
-                            value={walletMobile}
-                            onChange={(e) => setWalletMobile(e.target.value)}
-                            maxLength={11}
-                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-orange-500 font-mono transition"
-                          />
-                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">
-                            11 Digits
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-3.5 rounded-xl border border-orange-200/80 text-xs text-gray-600 flex items-start gap-2.5">
-                        <Sparkles size={16} className="text-orange-500 shrink-0 mt-0.5" />
+                  {/* CARD PANEL: the card is entered on Stripe's hosted page, never here */}
+                  {paymentMethod === "card" && (
+                    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl flex items-start gap-3 text-xs text-gray-600">
+                      <Lock size={20} className="text-orange-500 shrink-0 mt-0.5" />
+                      <div className="space-y-2">
+                        <h5 className="font-bold text-gray-900">You'll pay on Stripe's secure page</h5>
                         <p className="leading-relaxed">
-                          When you click authorize, an approval prompt with an MPIN/OTP will be verified on your <strong className="text-gray-900">{walletProvider}</strong> mobile account.
+                          When you continue, we hold your items for 30 minutes and take you to Stripe to pay{" "}
+                          <strong className="text-gray-900">${total.toFixed(2)} USD</strong>. NOVA never sees or stores your card number.
+                          If you leave without paying, nothing is charged and the items go back on sale.
                         </p>
+                        {cardPayments?.testMode && (
+                          <p className="leading-relaxed text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                            <strong>Test mode:</strong> nothing is charged. Use card{" "}
+                            <span className="font-mono">4242 4242 4242 4242</span> with any future date and any CVC, or{" "}
+                            <span className="font-mono">4000 0000 0000 0002</span> to see a declined payment.
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1071,12 +798,10 @@ function Checkout() {
                     {loading ? (
                       <>
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Processing Payment...
+                        {paymentMethod === "card" ? "Opening secure payment…" : "Placing your order…"}
                       </>
                     ) : paymentMethod === "card" ? (
-                      `Pay ${formatPrice(total)} with Card`
-                    ) : paymentMethod === "wallet" ? (
-                      `Authorize ${formatPrice(total)} via ${walletProvider}`
+                      `Continue to payment (${formatPrice(total)})`
                     ) : (
                       `Place Cash on Delivery Order (${formatPrice(total)})`
                     )}
@@ -1091,108 +816,6 @@ function Checkout() {
           </form>
         )}
       </main>
-
-      {/* MOBILE WALLET OTP VERIFICATION MODAL */}
-      {showOtpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-gray-100 p-6 md:p-8 space-y-6 relative animate-scaleUp">
-            <button
-              onClick={() => {
-                setShowOtpModal(false);
-                setOtpError("");
-              }}
-              className="absolute right-5 top-5 p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="text-center space-y-2">
-              <div
-                className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-white shadow-lg ${
-                  walletProvider === "JazzCash"
-                    ? "bg-red-600 shadow-red-500/30"
-                    : "bg-emerald-600 shadow-emerald-500/30"
-                }`}
-              >
-                <Smartphone size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 pt-2">
-                {walletProvider} Authorization
-              </h3>
-              <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                Enter your 4-digit mobile transaction MPIN / OTP to authorize payment of{" "}
-                <strong className="text-gray-900">{formatPrice(total)}</strong> on account{" "}
-                <span className="font-mono font-bold text-gray-800">{walletMobile}</span>.
-              </p>
-            </div>
-
-            <form onSubmit={handleVerifyOtpAndPay} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider text-center mb-2">
-                  Enter 4-Digit MPIN / OTP
-                </label>
-                <input
-                  type="password"
-                  placeholder="••••"
-                  maxLength={4}
-                  value={otpValue}
-                  onChange={(e) => {
-                    const clean = e.target.value.replace(/\D/g, "").slice(0, 4);
-                    setOtpValue(clean);
-                    if (otpError) setOtpError("");
-                  }}
-                  autoFocus
-                  className="w-44 mx-auto block text-center text-3xl tracking-[0.4em] font-mono py-3 border-2 border-gray-300 rounded-2xl outline-none focus:border-orange-500 transition bg-gray-50"
-                />
-                {otpError && (
-                  <p className="text-xs text-red-600 font-bold text-center mt-2 animate-shake">
-                    {otpError}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex justify-between items-center text-xs text-gray-500 px-2">
-                <span>Code expires in:</span>
-                <span className="font-mono font-bold text-orange-600">
-                  00:{otpCountdown < 10 ? `0${otpCountdown}` : otpCountdown}
-                </span>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-xl border text-[11px] text-gray-500 flex items-center justify-center gap-1.5">
-                <Lock size={13} className="text-emerald-600" />
-                <span>Encrypted 3D-Secure mobile gateway</span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isVerifyingOtp || otpValue.length !== 4}
-                className="w-full bg-black text-white font-bold py-3.5 rounded-full text-sm hover:bg-orange-500 transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isVerifyingOtp ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying with {walletProvider}...</span>
-                  </>
-                ) : (
-                  `Authorize & Pay ${formatPrice(total)}`
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setOtpCountdown(59);
-                  showToast("New OTP sent to mobile account! 📲", "info");
-                }}
-                disabled={otpCountdown > 0}
-                className="w-full text-xs text-center text-gray-500 hover:text-orange-600 font-semibold disabled:opacity-40"
-              >
-                Didn't receive code? Resend MPIN
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
       <Footer />
     </div>

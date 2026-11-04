@@ -46,11 +46,17 @@ admin/
 │   ├── vite.config.ts            # Vite server running on port 5174
 │   ├── package.json              # Standalone frontend scripts
 │   ├── tsconfig.json             # TypeScript configuration
-│   ├── Admin.tsx                 # Full Admin Dashboard (Overview, Orders, Catalog, Settings)
+│   ├── Admin.tsx                 # Full Admin Dashboard (Overview, Orders, Catalog, Coupons, Settings)
 │   ├── AdminAnalytics.tsx        # Overview tab: revenue chart, top products, low stock, inbox
 │   ├── AdminLogin.tsx            # Admin sign-in
 │   ├── AdminPortalData.tsx       # Admin Data Hub & Export utility
 │   ├── ImageUploader.tsx         # Drag & drop photo uploader (main photo + colour variants)
+│   ├── AdminCoupons.tsx          # Coupons tab: stats, table, pause/resume, delete confirmation
+│   ├── CouponFormModal.tsx       # Create / edit coupon form with live ticket preview
+│   ├── CouponParts.tsx           # Status pill + coupon ticket
+│   ├── coupons.ts                # Coupon types, API calls, wording and checks
+│   ├── AdminModal.tsx            # Shared dialog shell (focus trap, Escape, bottom sheet on phones)
+│   ├── StatusChangeModal.tsx     # Confirm an order status change, add a note for the customer, choose whether to email
 │   ├── uploadImage.ts            # Upload request with progress + client-side file checks
 │   ├── index.ts                  # Barrel export
 │   └── src/
@@ -64,6 +70,7 @@ admin/
     ├── adminProducts.js          # Products create, update, delete endpoints
     ├── adminStats.js             # Dashboard analytics (revenue by day, top products, low stock, inbox)
     ├── adminUploads.js           # Product photo uploads (multer + storage service)
+    ├── adminCoupons.js           # Coupon list, create, update, pause/resume, delete
     └── index.js                  # Unified router & middleware export
 ```
 
@@ -74,7 +81,7 @@ admin/
 Mounted under `/api/admin`:
 - `POST /api/admin/login`
 - `GET /api/admin/orders`
-- `PATCH /api/admin/orders/:id/status`
+- `PATCH /api/admin/orders/:id/status` — `{ status, note?, notify? }`; emails the customer for Processing, Shipped, Delivered and Cancelled
 - `POST /api/admin/products`
 - `PUT /api/admin/products/:id`
 - `DELETE /api/admin/products/:id`
@@ -82,3 +89,4 @@ Mounted under `/api/admin`:
 - `GET /api/admin/stats?days=14` — revenue by day, totals, top products, category revenue, low stock, recent contact messages
 - `PATCH /api/admin/stats/messages/:id/read` — mark a contact message as read
 - `GET /api/admin/profile` · `PUT /api/admin/change-password`
+- `GET /api/admin/coupons` · `POST /api/admin/coupons` · `PUT /api/admin/coupons/:id` · `PATCH /api/admin/coupons/:id/toggle` · `DELETE /api/admin/coupons/:id` — coupon manager

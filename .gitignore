@@ -38,3 +38,6 @@ backend/uploads/*
 !backend/uploads/products/
 backend/uploads/products/*
 !backend/uploads/products/.gitkeep
+
+# Development email previews (written when SMTP isn't configured)
+backend/.email-previews/

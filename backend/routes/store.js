@@ -5,6 +5,8 @@ const express = require("express");
 const { db } = require("../config/db");
 const rateLimit = require("../middleware/rateLimit");
 const { evaluateCoupon, shippingCentsFor, toCents, fromCents } = require("../services/orderService");
+const { queueEmail } = require("../services/email");
+const { sendContactAutoReply } = require("../services/notifications");
 
 const router = express.Router();
 
@@ -143,9 +145,14 @@ router.post("/contact", formLimiter, async (req, res) => {
       "INSERT INTO contact_messages (name, email, subject, message) VALUES (?, ?, ?, ?)",
       [name, email, subject.slice(0, 200), message]
     );
+    const ticketId = `NOVA-${String(result.insertId).padStart(5, "0")}`;
+    queueEmail(`contact auto-reply ${ticketId}`, () =>
+      sendContactAutoReply({ name, email, subject, ticketId })
+    );
     return res.status(201).json({
       success: true,
-      ticketId: `NOVA-${String(result.insertId).padStart(5, "0")}`,
+      ticketId,
+      confirmationEmail: email,
       message: "Thanks! Our team usually replies within 24 hours.",
     });
   } catch (error) {

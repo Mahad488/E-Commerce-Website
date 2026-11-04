@@ -11,8 +11,11 @@ const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
 const storeRoutes = require("./routes/store");
+const paymentRoutes = require("./routes/payments");
+const { startPayments } = require("./services/paymentService");
 const { adminRouter } = require("./admin");
 const { UPLOADS_ROOT } = require("./services/storage");
+const { checkEmailTransport } = require("./services/email");
 
 const app = express();
 
@@ -23,6 +26,8 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
   .filter(Boolean);
 app.use(cors(allowedOrigins.length ? { origin: allowedOrigins } : undefined));
 
+// Stripe signs the exact bytes it sends, so the webhook gets the raw body (before express.json).
+app.use("/api/payments/webhook", express.raw({ type: "*/*", limit: "1mb" }));
 app.use(express.json({ limit: "1mb" }));
 // Uploaded images have random UUID names, so they never change and can be cached for a long time.
 app.use(
@@ -39,6 +44,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api", storeRoutes);
 app.use("/api/admin", adminRouter);
 
@@ -73,12 +79,14 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, async () => {
   console.log(`NOVA Backend running on port ${PORT}`);
+  checkEmailTransport();
   const connected = await testConnection();
   if (!connected) return;
 
   try {
     await ensureSchema(db);
     await seedIfEmpty(db);
+    startPayments();
   } catch (error) {
     console.error("[db] Schema check failed:", error.message);
   }

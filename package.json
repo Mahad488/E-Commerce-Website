@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:admin": "npm --prefix admin/frontend run dev",
+    "server": "node backend/server.js",
+    "dev:server": "npm --prefix backend run dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -14,6 +16,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "lucide-react": "^1.50.0",
     "motion": "^12.43.0",
+    "nodemailer": "^10.3.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4",

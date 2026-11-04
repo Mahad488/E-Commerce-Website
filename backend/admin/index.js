@@ -4,6 +4,7 @@ const adminOrdersRouter = require("./adminOrders");
 const adminProductsRouter = require("./adminProducts");
 const adminStatsRouter = require("./adminStats");
 const adminUploadsRouter = require("./adminUploads");
+const adminCouponsRouter = require("./adminCoupons");
 
 const router = express.Router();
 
@@ -21,6 +22,9 @@ router.use("/stats", adminStatsRouter);
 
 // Mount Admin Uploads (e.g. POST /api/admin/uploads)
 router.use("/uploads", adminUploadsRouter);
+
+// Mount Admin Coupons (e.g. /api/admin/coupons, /api/admin/coupons/:id/toggle)
+router.use("/coupons", adminCouponsRouter);
 
 module.exports = {
   adminRouter: router,

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CheckCircle2, Clock, Mail, MessageSquare, PackageSearch, Send } from "lucide-react";
 
 import PageShell from "../components/PageShell";
+import EmailNotice from "../components/EmailNotice";
 import { API_BASE_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -19,6 +20,7 @@ export default function Contact() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [ticket, setTicket] = useState("");
+  const [confirmationEmail, setConfirmationEmail] = useState("");
 
   const update = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -36,6 +38,7 @@ export default function Contact() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Could not send your message");
       setTicket(data.ticketId);
+      setConfirmationEmail(data.confirmationEmail || "");
     } catch (err) {
       setError(
         err instanceof Error && err.message !== "Failed to fetch"
@@ -60,6 +63,12 @@ export default function Contact() {
               <p className="text-gray-600 mt-2">
                 Your reference is <span className="font-mono font-bold">{ticket}</span>. We usually reply within 24 hours.
               </p>
+              {confirmationEmail && (
+                <EmailNotice className="mx-auto mt-5 max-w-md">
+                  A confirmation email is on its way to <strong>{confirmationEmail}</strong>. Reply to it if you want to add
+                  anything.
+                </EmailNotice>
+              )}
               <button
                 onClick={() => {
                   setTicket("");

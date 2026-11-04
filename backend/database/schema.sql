@@ -74,6 +74,26 @@ CREATE TABLE IF NOT EXISTS order_status_history (
   INDEX idx_history_order (order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- One row per online payment attempt (Stripe Checkout today). amount is in the order's
+-- currency; status is pending | paid | failed | expired | cancelled | review.
+-- raw_response keeps a trimmed copy of the provider's last reply (no card details).
+CREATE TABLE IF NOT EXISTS payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_id INT NOT NULL,
+  provider VARCHAR(30) NOT NULL,
+  session_id VARCHAR(255) NULL,
+  transaction_ref VARCHAR(255) NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  raw_response JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_payments_session (session_id),
+  INDEX idx_payments_order (order_id),
+  INDEX idx_payments_status (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS reviews (
   id INT AUTO_INCREMENT PRIMARY KEY,
   product_id INT NOT NULL,

@@ -9,7 +9,8 @@ const bcrypt = require("bcryptjs");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 
 // Columns added after the first version of the project. Older databases are
-// upgraded with ALTER TABLE so nobody has to drop their data.
+// upgraded with ALTER TABLE so nobody has to drop their data: missing columns are
+// added, and VARCHAR columns that are shorter than listed here are widened.
 const COLUMN_UPGRADES = {
   users: {
     phone: "VARCHAR(50) NULL",
@@ -61,11 +62,18 @@ function splitStatements(sql) {
 
 async function getExistingColumns(db, table) {
   const [rows] = await db.query(
-    `SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS
+    `SELECT COLUMN_NAME AS name, DATA_TYPE AS type, CHARACTER_MAXIMUM_LENGTH AS length
+     FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
     [table]
   );
-  return new Set(rows.map((row) => row.name));
+  return new Map(rows.map((row) => [row.name, row]));
+}
+
+/** True when an existing VARCHAR column is shorter than the VARCHAR(n) in `definition`. */
+function needsWidening(current, definition) {
+  const wanted = /^VARCHAR\((\d+)\)/i.exec(definition);
+  return Boolean(wanted && String(current.type).toLowerCase() === "varchar" && Number(current.length) < Number(wanted[1]));
 }
 
 async function ensureDefaultAdmin(db) {
@@ -93,9 +101,15 @@ async function ensureSchema(db) {
   for (const [table, columns] of Object.entries(COLUMN_UPGRADES)) {
     const existing = await getExistingColumns(db, table);
     for (const [column, definition] of Object.entries(columns)) {
-      if (!existing.has(column)) {
+      const current = existing.get(column);
+      if (!current) {
         await db.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
         console.log(`[db] Added column ${table}.${column}`);
+      } else if (needsWidening(current, definition)) {
+        // e.g. early databases had orders.payment_method VARCHAR(20), too short for
+        // "Cash on Delivery (COD)". Widening a VARCHAR keeps every existing value.
+        await db.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`);
+        console.log(`[db] Widened ${table}.${column} from VARCHAR(${current.length}) to ${definition.split(" ")[0]}`);
       }
     }
   }

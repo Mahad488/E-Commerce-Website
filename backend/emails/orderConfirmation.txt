@@ -1,0 +1,19 @@
+Thanks, {{firstName}}. Your order is in.
+Order #{{orderId}} · {{placedOn}}
+
+{{intro}}
+
+{{{itemsText}}}
+
+{{{summaryText}}}
+
+Delivering to
+{{customerName}}
+{{address}}
+{{city}}, {{country}}
+{{mobile}}
+
+Payment: {{paymentMethod}}. {{paymentStatus}}.
+
+Track your order: {{trackUrl}}
+Enter order number {{orderId}} and this email address. We'll also email you when it ships.

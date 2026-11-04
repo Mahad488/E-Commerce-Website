@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { AnimatePresence } from "motion/react";
 import {
   Package,
   DollarSign,
@@ -45,7 +46,9 @@ import {
 
 import { API_BASE_URL } from "../../src/config/api";
 import AdminAnalytics from "./AdminAnalytics";
+import AdminCoupons from "./AdminCoupons";
 import ImageUploader from "./ImageUploader";
+import StatusChangeModal from "./StatusChangeModal";
 import { useToast } from "../../src/context/ToastContext";
 import { getImageUrl } from "../../src/lib/catalog";
 import { products as fallbackProducts, type Product, type ProductColorVariant } from "../../src/data/products";
@@ -110,7 +113,7 @@ interface Order {
 export default function Admin() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "products" | "add-product" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "products" | "add-product" | "coupons" | "settings">("overview");
 
   // Security & Password Settings State
   const [adminUsername, setAdminUsername] = useState("nova_admin");
@@ -664,7 +667,10 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleUpdateStatus = async (orderId: number, newStatus: string) => {
+  // Picking a status in the table opens StatusChangeModal; this saves it.
+  const [statusChange, setStatusChange] = useState<{ order: Order; status: string } | null>(null);
+
+  const handleUpdateStatus = async (orderId: number, newStatus: string, note = "", notify = true) => {
     const token = localStorage.getItem("nova_admin_token");
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/orders/${orderId}/status`, {
@@ -673,18 +679,22 @@ export default function Admin() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, note, notify }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        showToast(`Order #${orderId} status updated to ${newStatus}`, "success");
+        showToast(
+          `Order #${orderId} is now ${newStatus}${data.emailed ? ". The customer has been emailed." : ""}`,
+          "success"
+        );
         fetchData();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showToast(data.message || "Failed to update status", "error");
+        return true;
       }
+      showToast(data.message || "Failed to update status", "error");
     } catch {
       showToast("Failed to update status", "error");
     }
+    return false;
   };
 
   const handleDeleteProduct = async (productId: number) => {
@@ -844,8 +854,8 @@ export default function Admin() {
         </section>
 
         <main className="max-w-7xl mx-auto px-5 lg:px-8 py-10">
-          {/* Metric Cards (the Overview tab has its own, richer ones) */}
-          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 ${activeTab === "overview" ? "hidden" : ""}`}>
+          {/* Metric Cards (the Overview and Coupons tabs have their own) */}
+          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 ${activeTab === "overview" || activeTab === "coupons" ? "hidden" : ""}`}>
             <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -934,6 +944,17 @@ export default function Admin() {
               Add New Product
             </button>
             <button
+              onClick={() => setActiveTab("coupons")}
+              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 ${
+                activeTab === "coupons"
+                  ? "border-orange-500 text-orange-500"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              <Tag size={16} />
+              Coupons
+            </button>
+            <button
               onClick={() => setActiveTab("settings")}
               className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "settings"
@@ -949,6 +970,8 @@ export default function Admin() {
           {activeTab === "overview" && (
             <AdminAnalytics onGoToProducts={() => setActiveTab("products")} onGoToOrders={() => setActiveTab("orders")} />
           )}
+
+          {activeTab === "coupons" && <AdminCoupons />}
 
           {/* Tab 1: Orders List */}
           {activeTab === "orders" && (
@@ -1197,9 +1220,7 @@ export default function Admin() {
                           <td className="py-4">
                             <select
                               value={order.status}
-                              onChange={(e) =>
-                                handleUpdateStatus(order.id, e.target.value)
-                              }
+                              onChange={(e) => setStatusChange({ order, status: e.target.value })}
                               className={`border rounded-xl px-3 py-1.5 text-xs font-bold outline-none cursor-pointer transition ${
                                 order.status === "Pending"
                                   ? "bg-amber-50 text-amber-800 border-amber-300"
@@ -2903,6 +2924,22 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {statusChange && (
+          <StatusChangeModal
+            key={`${statusChange.order.id}-${statusChange.status}`}
+            order={statusChange.order}
+            status={statusChange.status}
+            onClose={() => setStatusChange(null)}
+            onConfirm={async (note, notify) => {
+              const saved = await handleUpdateStatus(statusChange.order.id, statusChange.status, note, notify);
+              if (saved) setStatusChange(null);
+              return saved;
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Admin Portal Footer */}
       <footer className="bg-gray-950 border-t border-gray-800 text-gray-500 text-xs py-6 mt-16 text-center">

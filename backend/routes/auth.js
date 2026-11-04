@@ -7,6 +7,8 @@ const { db } = require("../config/db");
 const { getUserSecret, isProduction } = require("../config/secrets");
 const { authenticateToken } = require("../middleware/auth");
 const rateLimit = require("../middleware/rateLimit");
+const { queueEmail } = require("../services/email");
+const { sendPasswordReset } = require("../services/notifications");
 
 const router = express.Router();
 
@@ -393,9 +395,12 @@ router.post("/forgot-password", recoveryLimiter, async (req, res) => {
       [normalizedEmail, resetCode, expiresAt]
     );
 
-    // No email service is wired up yet, so the code is logged on the server.
-    // Plug in an email provider (e.g. Nodemailer/Resend) here for production.
-    console.log(`[AUTH] Password recovery code for ${normalizedEmail}: ${resetCode} (valid until ${expiresAt.toLocaleTimeString()})`);
+    // Emailed after the response goes out. Without SMTP (local dev) the email, code included,
+    // is printed to the API terminal instead.
+    const user = users[0];
+    queueEmail("password reset code", () =>
+      sendPasswordReset({ email: user.email, name: user.name, code: resetCode, expiresInMinutes: 15 })
+    );
 
     const response = {
       success: true,
@@ -403,11 +408,6 @@ router.post("/forgot-password", recoveryLimiter, async (req, res) => {
       email: normalizedEmail,
       expiresInMinutes: 15,
     };
-    // Development convenience only: show the code in the UI so the flow can be tested
-    // without email. Never returned when NODE_ENV=production.
-    if (!isProduction) {
-      response.resetCode = resetCode;
-    }
     return res.status(200).json(response);
   } catch (error) {
     console.error("Forgot password error:", error);

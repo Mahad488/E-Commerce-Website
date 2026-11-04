@@ -1,0 +1,33 @@
+<p style="margin:0 0 6px;font-size:14px;color:#5E5A73;">Order #{{orderId}} &middot; {{placedOn}}</p>
+<h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;font-weight:800;">Thanks, {{firstName}}. Your order is in.</h1>
+<p style="margin:0 0 24px;">{{intro}}</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:15px;">
+{{{itemsHtml}}}
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;font-size:15px;">
+{{{summaryHtml}}}
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+  <tr>
+    <td valign="top" width="50%" style="padding:16px;background:#F6F4FB;border-radius:12px 0 0 12px;font-size:14px;line-height:1.55;">
+      <strong style="display:block;margin-bottom:4px;">Delivering to</strong>
+      {{customerName}}<br>{{address}}<br>{{city}}, {{country}}<br>{{mobile}}
+    </td>
+    <td valign="top" width="50%" style="padding:16px;background:#F6F4FB;border-radius:0 12px 12px 0;font-size:14px;line-height:1.55;">
+      <strong style="display:block;margin-bottom:4px;">Payment</strong>
+      {{paymentMethod}}<br>{{paymentStatus}}
+    </td>
+  </tr>
+</table>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 8px;">
+  <tr>
+    <td style="background:#17132E;border-radius:12px;">
+      <a href="{{trackUrl}}" style="display:inline-block;padding:14px 26px;color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;">Track your order</a>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;font-size:13px;color:#5E5A73;">Enter order number {{orderId}} and this email address to see where it is. We'll also email you when it ships.</p>

@@ -23,6 +23,7 @@ import NotFound from "./pages/NotFound";
 
 // Less-visited pages are split into their own chunks and loaded on demand.
 const Checkout = lazy(() => import("./pages/Checkout"));
+const CheckoutResult = lazy(() => import("./pages/CheckoutResult"));
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Account = lazy(() => import("./pages/Account"));
@@ -67,6 +68,7 @@ function AnimatedRoutes() {
             <Route path="/products/:id" element={<ProductDetails />} />
             <Route path="/cart" element={<Cart />} />
             <Route path="/checkout" element={<Checkout />} />
+            <Route path="/checkout/result" element={<CheckoutResult />} />
             <Route path="/wishlist" element={<Wishlist />} />
             <Route path="/track-order" element={<TrackOrder />} />
             <Route path="/contact" element={<Contact />} />

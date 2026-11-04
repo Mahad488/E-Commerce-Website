@@ -29,6 +29,7 @@ import {
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import OrderInvoiceModal from "../components/OrderInvoiceModal";
+import EmailNotice from "../components/EmailNotice";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -209,7 +210,10 @@ export default function Account() {
       });
       const data = await res.json();
       if (res.ok) {
-        showToast("Order cancelled — items returned to stock ✓", "success");
+        showToast(
+          data.emailed ? `Order #${orderId} cancelled. We've emailed you a confirmation.` : `Order #${orderId} cancelled.`,
+          "success"
+        );
         setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "Cancelled" } : o)));
       } else {
         showToast(data.message || "Failed to cancel order", "error");
@@ -482,6 +486,12 @@ export default function Account() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {currentUser?.email && (
+                    <EmailNotice>
+                      We email order updates to <strong>{currentUser.email}</strong>: a confirmation when you order, and again when
+                      an order ships, arrives or is cancelled.
+                    </EmailNotice>
+                  )}
                   {orders.map((order) => {
                     const currentStep = getStepIndex(order.status);
 

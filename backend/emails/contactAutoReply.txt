@@ -1,0 +1,11 @@
+We've got your message
+Reference {{ticketId}}
+
+Hi {{firstName}}, thanks for getting in touch about {{topic}}. Our team usually replies within 24 hours.
+
+Need to add something? Reply to this email and keep {{ticketId}} in the subject, so it joins the same conversation.
+
+Help centre: {{storeUrl}}/faq
+Track an order: {{storeUrl}}/track-order
+
+Didn't contact us? Someone may have typed your address by mistake. You can ignore this email.

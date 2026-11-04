@@ -3,6 +3,8 @@
  * so stock, shipping and coupon rules live in exactly one place.
  */
 const { db } = require("../config/db");
+const { queueEmail } = require("./email");
+const { sendOrderStatusChanged, notifiesCustomer } = require("./notifications");
 
 const ORDER_STATUSES = ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"];
 const FREE_SHIPPING_THRESHOLD = 100;
@@ -118,8 +120,14 @@ async function adjustStockForOrder(conn, orderId, direction) {
  * Moves an order to a new status inside a transaction.
  * Cancelling restores stock; un-cancelling takes it again.
  * Cash-on-delivery orders are marked paid when delivered.
+ * After the commit the customer is emailed about Processing, Shipped, Delivered and
+ * Cancelled (unless notify is false); `emailNote` is added to that email.
  */
-async function changeOrderStatus(orderId, newStatus, { note = null, onlyIfStatus = null, userId = null } = {}) {
+async function changeOrderStatus(
+  orderId,
+  newStatus,
+  { note = null, onlyIfStatus = null, userId = null, notify = true, emailNote = null } = {}
+) {
   if (!ORDER_STATUSES.includes(newStatus)) {
     return { ok: false, code: 400, message: `Status must be one of: ${ORDER_STATUSES.join(", ")}` };
   }
@@ -162,13 +170,204 @@ async function changeOrderStatus(orderId, newStatus, { note = null, onlyIfStatus
     await recordStatus(conn, orderId, newStatus, note);
 
     await conn.commit();
-    return { ok: true, status: newStatus, previous: order.status };
+
+    const emailed = notify && notifiesCustomer(newStatus);
+    if (emailed) {
+      queueEmail(`order #${orderId} ${newStatus} email`, () =>
+        sendOrderStatusChanged(orderId, newStatus, { note: emailNote, byCustomer: userId !== null })
+      );
+    }
+    return { ok: true, status: newStatus, previous: order.status, emailed };
   } catch (error) {
     await conn.rollback();
     throw error;
   } finally {
     conn.release();
   }
+}
+
+/** A problem with an order the shopper can fix (bad input, out of stock, invalid coupon). */
+class OrderError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const clean = (value, max = 255) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+
+/**
+ * Checks the body of an order request (POST /api/orders and /api/payments/create-session).
+ * Returns { error } or { input }.
+ */
+function readOrderInput(body) {
+  const { items, coupon_code } = body || {};
+  const input = {
+    items,
+    address: clean(body?.address),
+    mobile: clean(body?.mobile_number, 50),
+    city: clean(body?.city, 100),
+    country: clean(body?.country, 100),
+    couponCode: typeof coupon_code === "string" && coupon_code.trim() ? coupon_code : null,
+  };
+
+  if (!Array.isArray(items) || items.length === 0) return { error: "Cart is empty" };
+  if (
+    items.length > 100 ||
+    items.some(
+      (item) =>
+        !item ||
+        !Number.isSafeInteger(item.product_id) ||
+        item.product_id <= 0 ||
+        !Number.isSafeInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        item.quantity > 99
+    )
+  ) {
+    return { error: "Order items must have a valid product_id and a quantity between 1 and 99" };
+  }
+  if (!input.address || !input.mobile || !input.city || !input.country) {
+    return { error: "Address, mobile number, city and country are required" };
+  }
+  return { input };
+}
+
+/**
+ * Creates an order inside the caller's transaction. Prices, shipping and coupon discounts are
+ * always recalculated here; the client's totals are never trusted. Locks the products, checks
+ * stock (per colour too), takes the stock, counts the coupon use and writes the order, its items
+ * and its first status rows.
+ *
+ * payment = { method, status, orderStatus, transactionId, history: [[status, note], ...] }
+ * Returns { orderId, subtotalCents, shippingCents, discountCents, totalCents, coupon, lines }.
+ * Throws OrderError for problems the shopper can fix.
+ */
+async function createOrder(conn, userId, input, payment) {
+  const uniqueProductIds = Array.from(new Set(input.items.map((item) => item.product_id)));
+  const placeholders = uniqueProductIds.map(() => "?").join(", ");
+  const [products] = await conn.query(
+    `SELECT id, name, price, stock, colors, image FROM products WHERE id IN (${placeholders}) FOR UPDATE`,
+    uniqueProductIds
+  );
+  if (products.length !== uniqueProductIds.length) {
+    throw new OrderError(400, "One or more products no longer exist");
+  }
+
+  const productsById = new Map(
+    products.map((p) => [Number(p.id), { ...p, stock: Number(p.stock) || 0, colors: parseColors(p.colors) }])
+  );
+
+  let subtotalCents = 0;
+  const orderItems = [];
+
+  for (const item of input.items) {
+    const product = productsById.get(item.product_id);
+    const priceCents = toCents(product.price);
+
+    if (product.stock < item.quantity) {
+      throw new OrderError(
+        409,
+        `Only ${product.stock} of "${product.name}" left in stock (you requested ${item.quantity}).`
+      );
+    }
+
+    let colorName = clean(item.color || item.selectedColor, 100);
+    let colorImage = clean(item.color_image || item.selectedColorImage, 500);
+    if (!colorName && product.colors[0]?.name) {
+      colorName = product.colors[0].name;
+      colorImage = colorImage || product.colors[0].image || "";
+    }
+    colorName = colorName || "Standard";
+
+    const variant = findVariant(product.colors, colorName);
+    if (variant && variant.quantity !== undefined && variant.quantity !== null) {
+      const available = Number(variant.quantity) || 0;
+      if (available < item.quantity) {
+        throw new OrderError(409, `Only ${available} of "${product.name}" (${variant.name}) left in stock.`);
+      }
+      variant.quantity = available - item.quantity;
+    }
+
+    product.stock -= item.quantity;
+    subtotalCents += priceCents * item.quantity;
+    orderItems.push({
+      productId: product.id,
+      name: product.name,
+      quantity: item.quantity,
+      priceCents,
+      color: colorName,
+      colorImage: colorImage || product.image || null,
+    });
+  }
+
+  let discountCents = 0;
+  let freeShipping = false;
+  let coupon = null;
+  if (input.couponCode) {
+    const result = await evaluateCoupon(conn, input.couponCode, subtotalCents, { lock: true });
+    if (result.error) throw new OrderError(400, result.error);
+    discountCents = result.discountCents;
+    freeShipping = result.freeShipping;
+    coupon = result.coupon;
+  }
+  const shippingCents = shippingCentsFor(subtotalCents, freeShipping);
+  const totalCents = Math.max(0, subtotalCents - discountCents) + shippingCents;
+
+  const [orderResult] = await conn.query(
+    `INSERT INTO orders (user_id, subtotal, shipping_fee, discount_amount, coupon_code, total_amount, status,
+       address, mobile_number, city, country, payment_method, payment_status, transaction_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      fromCents(subtotalCents),
+      fromCents(shippingCents),
+      fromCents(discountCents),
+      coupon ? coupon.code : null,
+      fromCents(totalCents),
+      payment.orderStatus,
+      input.address,
+      input.mobile,
+      input.city,
+      input.country,
+      payment.method,
+      payment.status,
+      payment.transactionId,
+    ]
+  );
+  const orderId = orderResult.insertId;
+
+  for (const item of orderItems) {
+    await conn.query(
+      "INSERT INTO order_items (order_id, product_id, quantity, price, color, color_image) VALUES (?, ?, ?, ?, ?, ?)",
+      [orderId, item.productId, item.quantity, fromCents(item.priceCents), item.color, item.colorImage]
+    );
+  }
+
+  for (const product of productsById.values()) {
+    await conn.query("UPDATE products SET stock = ?, colors = ? WHERE id = ?", [
+      Math.max(0, product.stock),
+      product.colors.length > 0 ? JSON.stringify(product.colors) : null,
+      product.id,
+    ]);
+  }
+
+  if (coupon) {
+    await conn.query("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?", [coupon.id]);
+  }
+
+  for (const [status, note] of payment.history) {
+    await recordStatus(conn, orderId, status, note);
+  }
+
+  return {
+    orderId,
+    subtotalCents,
+    shippingCents,
+    discountCents,
+    totalCents,
+    coupon,
+    lines: orderItems.map(({ name, quantity, priceCents, color }) => ({ name, quantity, priceCents, color })),
+  };
 }
 
 /**
@@ -222,6 +421,10 @@ module.exports = {
   evaluateCoupon,
   shippingCentsFor,
   recordStatus,
+  adjustStockForOrder,
   changeOrderStatus,
   loadOrdersWithItems,
+  OrderError,
+  readOrderInput,
+  createOrder,
 };

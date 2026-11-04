@@ -1,0 +1,11 @@
+{{headline}}
+Order #{{orderId}} · {{statusLabel}}
+
+Hi {{firstName}}, {{message}}
+
+{{{noteText}}}
+
+{{{itemsText}}}
+
+Track your order: {{trackUrl}}
+Enter order number {{orderId}} and this email address to see every update.

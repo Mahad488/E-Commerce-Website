@@ -48,7 +48,6 @@ export default function Login() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryError, setRecoveryError] = useState("");
-  const [generatedCodeDemo, setGeneratedCodeDemo] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(0);
 
   // Recovery timer countdown
@@ -152,13 +151,10 @@ export default function Login() {
         throw new Error(data.message || "Failed to process recovery request.");
       }
 
-      setGeneratedCodeDemo(data.resetCode || null);
-      if (data.resetCode) {
-        setResetCode(data.resetCode);
-      }
+      setResetCode("");
       setRecoveryStep("code_password");
       setResendTimer(45);
-      showToast("Verification code generated! ✉️", "success");
+      showToast("Verification code sent to your email! ✉️", "success");
     } catch (caught) {
       const err = caught as Error;
       setRecoveryError(err.message || "Unable to reach server. Please check your network.");
@@ -180,10 +176,9 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to resend code.");
-      setGeneratedCodeDemo(data.resetCode || null);
-      if (data.resetCode) setResetCode(data.resetCode);
+      setResetCode("");
       setResendTimer(45);
-      showToast("Fresh verification code sent! ✉️", "info");
+      showToast("Fresh verification code sent to your email! ✉️", "info");
     } catch (caught) {
       const err = caught as Error;
       setRecoveryError(err.message || "Could not resend code. Please try again.");
@@ -249,7 +244,6 @@ export default function Login() {
     setResetCode("");
     setNewPassword("");
     setConfirmNewPassword("");
-    setGeneratedCodeDemo(null);
   };
 
   return (
@@ -690,24 +684,13 @@ export default function Login() {
                   </button>
                 </div>
 
-                {/* Demo Helper Badge */}
-                {generatedCodeDemo && (
-                  <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-2xl text-xs flex items-center justify-between">
-                    <div>
-                      <p className="text-amber-800 font-bold">Verification Code Generated:</p>
-                      <p className="font-mono text-sm font-black text-amber-950 mt-0.5 tracking-wider">
-                        {generatedCodeDemo}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setResetCode(generatedCodeDemo)}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition"
-                    >
-                      Auto-fill Code
-                    </button>
-                  </div>
-                )}
+                {/* Instructions Box */}
+                <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-2xl text-xs flex items-center gap-3 text-blue-950">
+                  <Mail size={18} className="text-blue-600 shrink-0" />
+                  <p className="leading-relaxed">
+                    A 6-digit code has been sent to your email. Check your <strong>Inbox</strong> (or <strong>Spam</strong> folder) and type the code below.
+                  </p>
+                </div>
 
                 {/* 6-Digit Code Input */}
                 <div>

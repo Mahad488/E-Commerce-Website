@@ -61,7 +61,7 @@ Before screenshots for every route (1366px full page, and 390px as one image per
 - **Login / Register.** The side panel quotes a testimonial that isn't real ("Sophie V."). "Forgot password?" appears twice. The Google and Apple buttons are simulated: they only show a toast. "256-Bit SSL Encrypted" is marketing filler.
 - **Track order, Contact, FAQ, About, Legal.** Clean but templated: grey band, cards with icons, arrows on links. The FAQ accordion opens with no height animation.
 - **404.** A gradient "404" on a radial glow. Friendly copy, generic look.
-- **Admin.** I could audit only the login screen in the browser (the admin password in `backend/.env` differs from the example default, and I didn't read it). From the code: a dark top bar plus horizontal tabs, three stat cards with uppercase labels and coloured icon squares, `rounded-3xl` panels, and a 2,918-line `Admin.tsx`. The login page has a "Fill Default Credentials" button, which should not ship to production (outside 0A scope; flagged for later).
+- **Admin.** I could audit only the login screen in the browser (the admin password in `backend/.env` differs from the example default, and I didn't read it). From the code: a dark top bar plus horizontal tabs, three stat cards with uppercase labels and coloured icon squares, `rounded-3xl` panels, and a 2,918-line `Admin.tsx`. The login page had a "Fill Default Credentials" button, since removed.
 
 ---
 

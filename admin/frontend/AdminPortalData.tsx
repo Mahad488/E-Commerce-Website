@@ -1,73 +1,29 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useMemo } from "react";
-import { getImageUrl } from "../../src/lib/catalog";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  Package,
-  DollarSign,
-  Box,
-  Eye,
-  X,
-  Search,
-  Filter,
   AlertTriangle,
-  Download,
-  Copy,
+  ArrowLeft,
+  Box,
   Check,
+  Copy,
+  DollarSign,
+  Download,
+  Eye,
+  Filter,
   Layers,
-  Sparkles,
-  Tag,
+  Package,
   Palette,
+  RefreshCw,
+  Search,
+  Tag,
+  X,
 } from "lucide-react";
-
-// ==========================================
-// 1. DATA TYPES & INTERFACES
-// ==========================================
-
-export interface ProductColorVariant {
-  name: string;
-  hex: string;
-  image?: string;
-  quantity: number;
-}
-
-export interface Product {
-  id: number;
-  name: string;
-  category: string;
-  price: number;
-  oldPrice?: number;
-  rating: number;
-  image: string;
-  description: string;
-  stock: number;
-  colors?: ProductColorVariant[];
-}
-
-export interface OrderItem {
-  id: number;
-  product_id: number;
-  quantity: number;
-  price: string | number;
-  color?: string;
-  color_image?: string;
-  product_name?: string;
-  product_image?: string;
-}
-
-export interface Order {
-  id: number;
-  user_name?: string;
-  user_email?: string;
-  total_amount: string | number;
-  status: "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled" | string;
-  address?: string;
-  city?: string;
-  country?: string;
-  mobile_number?: string;
-  payment_method?: string;
-  created_at: string;
-  items?: OrderItem[];
-}
+import { API_BASE_URL } from "../../src/config/api";
+import type { Product } from "../../src/data/products";
+import { getImageUrl, normalizeProduct } from "../../src/lib/catalog";
+import { useMediaQuery } from "../../src/lib/useMediaQuery";
+import type { Order } from "./orderTypes";
 
 // ==========================================
 // 2. PRESET COLORS & CATEGORIES
@@ -96,269 +52,65 @@ export const ADMIN_BASE_CATEGORIES = [
 ];
 
 // ==========================================
-// 3. COMPLETE ADMIN PRODUCTS DATASET
+// 3. LIVE DATA
 // ==========================================
 
-export const INITIAL_ADMIN_PRODUCTS: Product[] = [
-  {
-    id: 1,
-    name: "Premium Casual Jacket",
-    category: "Fashion",
-    price: 89.99,
-    oldPrice: 120,
-    rating: 4.8,
-    image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
-    description: "A stylish premium casual jacket designed for everyday comfort and modern fashion.",
-    stock: 15,
-    colors: [
-      { name: "Black", hex: "#111827", quantity: 8, image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80" },
-      { name: "Brown", hex: "#78350f", quantity: 7, image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 2,
-    name: "Classic Sneakers",
-    category: "Fashion",
-    price: 65,
-    oldPrice: 85,
-    rating: 4.7,
-    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80",
-    description: "Comfortable everyday sneakers with a modern design and durable sole.",
-    stock: 20,
-    colors: [
-      { name: "Red", hex: "#dc2626", quantity: 12, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80" },
-      { name: "White", hex: "#ffffff", quantity: 8, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 3,
-    name: "Minimal Wrist Watch",
-    category: "Accessories",
-    price: 110,
-    oldPrice: 140,
-    rating: 4.9,
-    image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80",
-    description: "A minimal wristwatch suitable for both casual and formal occasions.",
-    stock: 12,
-    colors: [
-      { name: "White", hex: "#ffffff", quantity: 6, image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80" },
-      { name: "Black", hex: "#111827", quantity: 6, image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 4,
-    name: "Modern Headphones",
-    category: "Electronics",
-    price: 75,
-    oldPrice: 99,
-    rating: 4.8,
-    image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80",
-    description: "Modern headphones designed for immersive audio and comfortable listening.",
-    stock: 18,
-    colors: [
-      { name: "Black", hex: "#111827", quantity: 10, image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80" },
-      { name: "Navy Blue", hex: "#1e3a8a", quantity: 8, image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 5,
-    name: "Premium Backpack",
-    category: "Lifestyle",
-    price: 55,
-    oldPrice: 75,
-    rating: 4.6,
-    image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80",
-    description: "A versatile backpack for daily use, travel, and carrying essentials.",
-    stock: 25,
-    colors: [
-      { name: "Grey", hex: "#6b7280", quantity: 15, image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80" },
-      { name: "Black", hex: "#111827", quantity: 10, image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 6,
-    name: "Wireless Headphones Pro",
-    category: "Electronics",
-    price: 95,
-    oldPrice: 125,
-    rating: 4.9,
-    image: "https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=600&q=80",
-    description: "Wireless audio headphones with a sleek design for everyday entertainment.",
-    stock: 10,
-    colors: [
-      { name: "Black", hex: "#111827", quantity: 5, image: "https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=600&q=80" },
-      { name: "White", hex: "#ffffff", quantity: 5, image: "https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 7,
-    name: "Classic Sunglasses",
-    category: "Accessories",
-    price: 35,
-    oldPrice: 50,
-    rating: 4.5,
-    image: "https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=600&q=80",
-    description: "Classic sunglasses that add a stylish finishing touch to your outfit.",
-    stock: 30,
-    colors: [
-      { name: "Black", hex: "#111827", quantity: 20, image: "https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=600&q=80" },
-      { name: "Brown", hex: "#78350f", quantity: 10, image: "https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-  {
-    id: 8,
-    name: "Casual T-Shirt",
-    category: "Fashion",
-    price: 29,
-    oldPrice: 40,
-    rating: 4.7,
-    image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=600&q=80",
-    description: "A comfortable casual T-shirt with a clean and versatile everyday style.",
-    stock: 40,
-    colors: [
-      { name: "White", hex: "#ffffff", quantity: 20, image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=600&q=80" },
-      { name: "Navy Blue", hex: "#1e3a8a", quantity: 20, image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=600&q=80" },
-    ],
-  },
-];
+interface HubData {
+  products?: Product[];
+  orders?: Order[];
+  error?: string;
+  signedOut?: boolean;
+}
+
+async function fetchHubData(): Promise<HubData> {
+  const headers = { Authorization: `Bearer ${localStorage.getItem("nova_admin_token")}` };
+  try {
+    const [productsRes, ordersRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/products`, { headers }),
+      fetch(`${API_BASE_URL}/api/admin/orders`, { headers }),
+    ]);
+    if (ordersRes.status === 401 || ordersRes.status === 403) return { signedOut: true };
+    const productsBody = await productsRes.json();
+    const ordersBody = await ordersRes.json();
+    if (!productsRes.ok || !ordersRes.ok || !Array.isArray(productsBody.products) || !Array.isArray(ordersBody.orders)) {
+      return { error: ordersBody.message || productsBody.message || "Couldn't load the store data." };
+    }
+    return { products: productsBody.products.map(normalizeProduct), orders: ordersBody.orders };
+  } catch {
+    return { error: "Couldn't reach the server. Check your connection, then try again." };
+  }
+}
+
+const STATUS_PILLS: Record<string, string> = {
+  delivered: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  shipped: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  processing: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+  cancelled: "bg-red-500/10 text-red-400 border-red-500/30",
+};
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-block whitespace-nowrap text-[11px] font-bold px-2 py-1 rounded-lg border ${
+        STATUS_PILLS[status.toLowerCase()] || "bg-amber-500/10 text-amber-400 border-amber-500/30"
+      }`}
+    >
+      {status}
+    </span>
+  );
+}
 
 // ==========================================
-// 4. COMPLETE ADMIN ORDERS DATASET
-// ==========================================
-
-export const INITIAL_ADMIN_ORDERS: Order[] = [
-  {
-    id: 1001,
-    user_name: "Muhammad Ali",
-    user_email: "ali@marhabatech.pk",
-    total_amount: 154.99,
-    status: "Delivered",
-    address: "House 45, Street 12, Gulberg III",
-    city: "Lahore",
-    country: "Pakistan",
-    mobile_number: "+92 300 1234567",
-    payment_method: "Cash on Delivery",
-    created_at: "2026-10-20T14:32:00Z",
-    items: [
-      {
-        id: 1,
-        product_id: 1,
-        quantity: 1,
-        price: 89.99,
-        color: "Black",
-        product_name: "Premium Casual Jacket",
-        product_image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
-      },
-      {
-        id: 2,
-        product_id: 2,
-        quantity: 1,
-        price: 65.0,
-        color: "Red",
-        product_name: "Classic Sneakers",
-        product_image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80",
-      },
-    ],
-  },
-  {
-    id: 1002,
-    user_name: "Fatima Noor",
-    user_email: "fatima.noor@gmail.com",
-    total_amount: 110.0,
-    status: "Shipped",
-    address: "Apartment 4B, Clifton Block 2",
-    city: "Karachi",
-    country: "Pakistan",
-    mobile_number: "+92 321 9876543",
-    payment_method: "Card Payment",
-    created_at: "2026-10-21T09:15:00Z",
-    items: [
-      {
-        id: 3,
-        product_id: 3,
-        quantity: 1,
-        price: 110.0,
-        color: "White",
-        product_name: "Minimal Wrist Watch",
-        product_image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80",
-      },
-    ],
-  },
-  {
-    id: 1003,
-    user_name: "Usman Tariq",
-    user_email: "usman.tariq@yahoo.com",
-    total_amount: 170.0,
-    status: "Processing",
-    address: "Sector F-7/2, Street 18",
-    city: "Islamabad",
-    country: "Pakistan",
-    mobile_number: "+92 333 4567890",
-    payment_method: "Cash on Delivery",
-    created_at: "2026-10-22T16:45:00Z",
-    items: [
-      {
-        id: 4,
-        product_id: 4,
-        quantity: 1,
-        price: 75.0,
-        color: "Black",
-        product_name: "Modern Headphones",
-        product_image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80",
-      },
-      {
-        id: 5,
-        product_id: 6,
-        quantity: 1,
-        price: 95.0,
-        color: "Black",
-        product_name: "Wireless Headphones Pro",
-        product_image: "https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=600&q=80",
-      },
-    ],
-  },
-  {
-    id: 1004,
-    user_name: "Ayesha Khan",
-    user_email: "ayesha.k@outlook.com",
-    total_amount: 64.0,
-    status: "Pending",
-    address: "Canal View Society, Main Boulevard",
-    city: "Faisalabad",
-    country: "Pakistan",
-    mobile_number: "+92 304 8889900",
-    payment_method: "Cash on Delivery",
-    created_at: "2026-10-23T11:20:00Z",
-    items: [
-      {
-        id: 6,
-        product_id: 7,
-        quantity: 1,
-        price: 35.0,
-        color: "Black",
-        product_name: "Classic Sunglasses",
-        product_image: "https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=600&q=80",
-      },
-      {
-        id: 7,
-        product_id: 8,
-        quantity: 1,
-        price: 29.0,
-        color: "Navy Blue",
-        product_name: "Casual T-Shirt",
-        product_image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=600&q=80",
-      },
-    ],
-  },
-];
-
-// ==========================================
-// 5. REACT COMPONENT: AdminPortalData
+// 4. REACT COMPONENT: AdminPortalData
 // ==========================================
 
 export default function AdminPortalData() {
-  const [products] = useState<Product[]>(INITIAL_ADMIN_PRODUCTS);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ADMIN_ORDERS);
+  const navigate = useNavigate();
+  const wide = useMediaQuery("(min-width: 768px)");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "products" | "orders" | "raw-data">("overview");
 
   // Filter States
@@ -369,9 +121,42 @@ export default function AdminPortalData() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const applyData = (data: HubData) => {
+    if (data.signedOut) {
+      localStorage.removeItem("nova_admin_token");
+      navigate("/admin-login", { replace: true });
+      return;
+    }
+    if (data.error) {
+      setLoadError(data.error);
+    } else {
+      setProducts(data.products ?? []);
+      setOrders(data.orders ?? []);
+      setLoadError("");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetchHubData().then((data) => active && applyData(data));
+    return () => {
+      active = false;
+    };
+    // Loads once on open; the Refresh button loads again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refresh = () => {
+    setLoading(true);
+    fetchHubData().then(applyData);
+  };
+
   // Computed Metrics
   const metrics = useMemo(() => {
-    const totalRev = orders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
+    const totalRev = orders
+      .filter((o) => o.status.toLowerCase() !== "cancelled")
+      .reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
     const pendingOrders = orders.filter((o) => o.status.toLowerCase() === "pending").length;
     const deliveredOrders = orders.filter((o) => o.status.toLowerCase() === "delivered").length;
     const totalInventoryStock = products.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
@@ -418,16 +203,6 @@ export default function AdminPortalData() {
     });
   }, [products, productCategoryFilter, productSearch]);
 
-  // Status Updater
-  const handleUpdateOrderStatus = (orderId: number, newStatus: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
-    );
-    if (selectedOrder && selectedOrder.id === orderId) {
-      setSelectedOrder((prev) => (prev ? { ...prev, status: newStatus } : null));
-    }
-  };
-
   // Copy Full JSON
   const handleCopyJson = () => {
     const fullDataset = {
@@ -465,33 +240,45 @@ export default function AdminPortalData() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
+    // Below 1024px every field uses 16px text, otherwise iOS zooms the page when one is focused.
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 md:p-10 font-sans max-lg:[&_input]:text-base max-lg:[&_select]:text-base">
       {/* Header */}
-      <header className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+      <header className="max-w-7xl mx-auto mb-5 md:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5 md:pb-6">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-2">
-            <Sparkles size={13} />
-            marhaba-tech.pk Admin Data Hub
-          </div>
+          <Link
+            to="/admin"
+            className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition mb-1"
+          >
+            <ArrowLeft size={16} aria-hidden />
+            Back to dashboard
+          </Link>
           <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
             Admin Portal Master Data
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Centralized data store for products, orders, categories, colors, and store statistics.
+            Live products and orders from your store, ready to inspect or export.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="col-span-2 flex min-h-11 items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "motion-safe:animate-spin" : ""} aria-hidden />
+            {loading ? "Loading..." : "Refresh"}
+          </button>
           <button
             onClick={handleCopyJson}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition"
+            className="flex min-h-11 items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition"
           >
             {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
             {copied ? "Copied JSON!" : "Copy Raw JSON"}
           </button>
           <button
             onClick={handleDownloadJson}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-900/40 transition"
+            className="flex min-h-11 items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-900/40 transition"
           >
             <Download size={14} />
             Export Data File
@@ -499,58 +286,65 @@ export default function AdminPortalData() {
         </div>
       </header>
 
+      {loadError && (
+        <div role="alert" className="max-w-7xl mx-auto mb-5 flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Metric KPI Cards */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs uppercase font-bold tracking-wider text-slate-400">Total Products</p>
+      <div className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5 mb-5 md:mb-8">
+        <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex items-center justify-between gap-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-[11px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Products</p>
             <h3 className="text-2xl font-black text-white mt-1">{metrics.totalProducts}</h3>
             <p className="text-xs text-slate-400 mt-1">{metrics.totalInventoryStock} total units in stock</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+          <div className="hidden sm:flex shrink-0 w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 items-center justify-center">
             <Box size={22} />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs uppercase font-bold tracking-wider text-slate-400">Total Orders</p>
+        <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex items-center justify-between gap-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-[11px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Orders</p>
             <h3 className="text-2xl font-black text-white mt-1">{metrics.totalOrders}</h3>
             <p className="text-xs text-emerald-400 mt-1">{metrics.deliveredOrders} orders delivered</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
+          <div className="hidden sm:flex shrink-0 w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 items-center justify-center">
             <Package size={22} />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs uppercase font-bold tracking-wider text-slate-400">Total Revenue</p>
-            <h3 className="text-2xl font-black text-emerald-400 mt-1">${metrics.totalRevenue.toFixed(2)}</h3>
-            <p className="text-xs text-slate-400 mt-1">Across all completed orders</p>
+        <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex items-center justify-between gap-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-[11px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Revenue</p>
+            <h3 className="text-xl sm:text-2xl font-black text-emerald-400 mt-1 truncate">${metrics.totalRevenue.toFixed(2)}</h3>
+            <p className="text-xs text-slate-400 mt-1">Excludes cancelled orders</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+          <div className="hidden sm:flex shrink-0 w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 items-center justify-center">
             <DollarSign size={22} />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs uppercase font-bold tracking-wider text-slate-400">Pending Actions</p>
+        <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex items-center justify-between gap-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-[11px] sm:text-xs uppercase font-bold tracking-wider text-slate-400">Pending</p>
             <h3 className="text-2xl font-black text-amber-400 mt-1">{metrics.pendingOrders}</h3>
             <p className="text-xs text-amber-400 mt-1">{metrics.lowStockCount} items low stock</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+          <div className="hidden sm:flex shrink-0 w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 items-center justify-center">
             <AlertTriangle size={22} />
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="max-w-7xl mx-auto mb-6 flex border-b border-slate-800 gap-2">
+      <div className="max-w-7xl mx-auto mb-4 md:mb-6 flex border-b border-slate-800 gap-1 sm:gap-2 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 sm:mx-auto sm:px-0">
         <button
           onClick={() => setActiveTab("overview")}
-          className={`pb-3 px-4 text-sm font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-sm font-bold border-b-2 transition shrink-0 whitespace-nowrap ${
             activeTab === "overview" ? "border-emerald-500 text-emerald-400" : "border-transparent text-slate-400 hover:text-white"
           }`}
         >
@@ -558,7 +352,7 @@ export default function AdminPortalData() {
         </button>
         <button
           onClick={() => setActiveTab("products")}
-          className={`pb-3 px-4 text-sm font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-sm font-bold border-b-2 transition shrink-0 whitespace-nowrap ${
             activeTab === "products" ? "border-emerald-500 text-emerald-400" : "border-transparent text-slate-400 hover:text-white"
           }`}
         >
@@ -566,7 +360,7 @@ export default function AdminPortalData() {
         </button>
         <button
           onClick={() => setActiveTab("orders")}
-          className={`pb-3 px-4 text-sm font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-sm font-bold border-b-2 transition shrink-0 whitespace-nowrap ${
             activeTab === "orders" ? "border-emerald-500 text-emerald-400" : "border-transparent text-slate-400 hover:text-white"
           }`}
         >
@@ -574,7 +368,7 @@ export default function AdminPortalData() {
         </button>
         <button
           onClick={() => setActiveTab("raw-data")}
-          className={`pb-3 px-4 text-sm font-bold border-b-2 transition ${
+          className={`pb-3 px-3 sm:px-4 text-sm font-bold border-b-2 transition shrink-0 whitespace-nowrap ${
             activeTab === "raw-data" ? "border-emerald-500 text-emerald-400" : "border-transparent text-slate-400 hover:text-white"
           }`}
         >
@@ -587,7 +381,7 @@ export default function AdminPortalData() {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Preset Colors */}
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+            <div className="bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl">
               <div className="flex items-center gap-2 mb-4 text-slate-200 font-bold">
                 <Palette size={18} className="text-emerald-400" />
                 <h3>Color Palette Presets</h3>
@@ -609,7 +403,7 @@ export default function AdminPortalData() {
             </div>
 
             {/* Store Categories */}
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+            <div className="bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl">
               <div className="flex items-center gap-2 mb-4 text-slate-200 font-bold">
                 <Tag size={18} className="text-emerald-400" />
                 <h3>Store Categories</h3>
@@ -668,6 +462,33 @@ export default function AdminPortalData() {
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            {filteredProducts.length === 0 ? (
+              <p className="p-8 text-center text-sm text-slate-400">{loading ? "Loading products..." : "No products to show."}</p>
+            ) : !wide ? (
+              <ul className="divide-y divide-slate-800">
+                {filteredProducts.map((p) => (
+                  <li key={p.id} className="flex gap-3 p-3">
+                    <img
+                      src={getImageUrl(p.image, p.category)}
+                      alt=""
+                      loading="lazy"
+                      className="h-16 w-16 shrink-0 rounded-xl border border-slate-700 object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm font-bold text-white">{p.name}</p>
+                      <p className="truncate text-xs text-slate-400">
+                        #{p.id} · {p.category}
+                      </p>
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        <span className="font-bold text-emerald-400">${p.price}</span>
+                        <span className="text-slate-300">{p.stock} in stock</span>
+                        {p.rating > 0 && <span className="font-semibold text-amber-400">★ {p.rating}</span>}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-semibold">
@@ -738,6 +559,7 @@ export default function AdminPortalData() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -768,11 +590,41 @@ export default function AdminPortalData() {
                 <option value="Processing">Processing</option>
                 <option value="Shipped">Shipped</option>
                 <option value="Delivered">Delivered</option>
+                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            {filteredOrders.length === 0 ? (
+              <p className="p-8 text-center text-sm text-slate-400">{loading ? "Loading orders..." : "No orders to show."}</p>
+            ) : !wide ? (
+              <ul className="divide-y divide-slate-800">
+                {filteredOrders.map((o) => (
+                  <li key={o.id} className="space-y-2 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-mono font-bold text-emerald-400">#{o.id}</span>
+                      <span className="font-bold text-white">${Number(o.total_amount).toFixed(2)}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white">{o.user_name || "Guest Customer"}</p>
+                      <p className="truncate text-xs text-slate-400">{o.user_email}</p>
+                      <p className="truncate text-xs text-slate-500">{[o.city, o.payment_method].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <StatusPill status={o.status} />
+                      <button
+                        onClick={() => setSelectedOrder(o)}
+                        className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-4 text-sm font-bold text-slate-200 transition hover:bg-slate-700"
+                      >
+                        <Eye size={15} aria-hidden />
+                        Details
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-semibold">
@@ -805,24 +657,7 @@ export default function AdminPortalData() {
                       </td>
                       <td className="py-3.5 px-4 font-bold text-white">${Number(o.total_amount).toFixed(2)}</td>
                       <td className="py-3.5 px-4">
-                        <select
-                          value={o.status}
-                          onChange={(e) => handleUpdateOrderStatus(o.id, e.target.value)}
-                          className={`text-[11px] font-bold px-2 py-1 rounded-lg border focus:outline-none ${
-                            o.status.toLowerCase() === "delivered"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                              : o.status.toLowerCase() === "shipped"
-                              ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                              : o.status.toLowerCase() === "processing"
-                              ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
-                              : "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                          }`}
-                        >
-                          <option value="Pending" className="bg-slate-900 text-white">Pending</option>
-                          <option value="Processing" className="bg-slate-900 text-white">Processing</option>
-                          <option value="Shipped" className="bg-slate-900 text-white">Shipped</option>
-                          <option value="Delivered" className="bg-slate-900 text-white">Delivered</option>
-                        </select>
+                        <StatusPill status={o.status} />
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
@@ -838,7 +673,11 @@ export default function AdminPortalData() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
+          <p className="text-xs text-slate-500">
+            Order statuses are changed under Customer Orders on the dashboard, so customers get their update email.
+          </p>
         </div>
       )}
 
@@ -853,7 +692,7 @@ export default function AdminPortalData() {
               {products.length} Products | {orders.length} Orders
             </span>
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 overflow-x-auto max-h-[550px] font-mono text-xs text-emerald-300">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 overflow-auto max-h-[550px] font-mono text-xs text-emerald-300">
             <pre>
               {JSON.stringify(
                 {
@@ -875,17 +714,18 @@ export default function AdminPortalData() {
 
       {/* ORDER DETAILS MODAL */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-xl w-full max-h-[92vh] overflow-y-auto overscroll-contain p-4 sm:p-6 shadow-2xl relative">
             <button
               onClick={() => setSelectedOrder(null)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-white transition"
+              aria-label="Close order details"
+              className="absolute top-3 right-3 flex h-11 w-11 items-center justify-center text-slate-400 hover:text-white transition"
             >
               <X size={20} />
             </button>
 
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+              <div className="min-w-10 h-10 px-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
                 #{selectedOrder.id}
               </div>
               <div>
@@ -896,11 +736,11 @@ export default function AdminPortalData() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-6 text-xs bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 text-xs bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div className="min-w-0">
                 <span className="text-slate-500 font-medium">Customer:</span>
                 <p className="font-bold text-white mt-0.5">{selectedOrder.user_name}</p>
-                <p className="text-slate-400">{selectedOrder.user_email}</p>
+                <p className="text-slate-400 break-all">{selectedOrder.user_email}</p>
                 <p className="text-slate-400">{selectedOrder.mobile_number}</p>
               </div>
               <div>
@@ -919,22 +759,22 @@ export default function AdminPortalData() {
               {selectedOrder.items?.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img
-                      src={getImageUrl(item.product_image)}
+                      src={getImageUrl(item.color_image || item.product_image)}
                       alt={item.product_name}
-                      className="w-10 h-10 rounded-lg object-cover border border-slate-700"
+                      className="w-10 h-10 shrink-0 rounded-lg object-cover border border-slate-700"
                     />
-                    <div>
-                      <p className="font-bold text-white">{item.product_name}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-white truncate">{item.product_name}</p>
                       <p className="text-slate-400">
                         Qty: {item.quantity} {item.color && `• Color: ${item.color}`}
                       </p>
                     </div>
                   </div>
-                  <span className="font-bold text-emerald-400">${item.price}</span>
+                  <span className="font-bold text-emerald-400 shrink-0">${item.price}</span>
                 </div>
               ))}
             </div>

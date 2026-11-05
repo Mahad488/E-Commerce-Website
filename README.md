@@ -29,6 +29,8 @@ A complete online store built with **React 19 + TypeScript + Vite + Tailwind CSS
 - **Photo uploads**: drag and drop (or pick) a JPEG, PNG or WebP up to 3 MB for the main photo and for each colour, with a preview, upload progress, Change / Remove, and an *Or paste image URL instead* option. Saving waits for any upload still running
 - **Coupon manager** (*Coupons* tab): totals for codes, active codes and times used; a table with each code, discount, minimum order, usage meter ("14 / 50 uses"), end date and status (Active, Paused, Expired, Used up); create / edit in a modal with a live preview of the coupon ticket; one-click Pause / Resume; delete with a confirmation (and a *Pause instead* option for codes that have been used)
 - Change admin username/password
+- **Works on phones**: from 360px up, with a menu sheet instead of the tab strip, cards instead of the order, product and coupon tables, bottom-sheet forms and filters, and 16px fields so iOS doesn't zoom in
+- **Data Hub** (`/admin-data`): your live products and orders, ready to inspect or export as JSON
 
 ### Backend
 - One-command database setup with **schema, migrations and seed data**
@@ -56,14 +58,14 @@ cd backend && npm install  # API
 ### 2. Configure the backend
 ```bash
 cd backend
-cp .env.example .env       # then edit DB_PASSWORD, JWT_SECRET and ADMIN_SECRET
+cp .env.example .env       # then edit DB_PASSWORD, JWT_SECRET, ADMIN_SECRET, ADMIN_USERNAME and ADMIN_PASSWORD
 ```
 
 ### 3. Create the database (tables + demo data)
 ```bash
 npm run db:setup           # inside backend/
 ```
-This creates the database if needed, creates/upgrades every table, and — only when the `products` table is empty — seeds 20 products, reviews, coupons, a demo shopper and two weeks of demo orders (set `SEED_DEMO_ORDERS=false` to skip the orders).
+This creates the database if needed, creates/upgrades every table, and — only when the `products` table is empty — seeds 20 products, reviews, coupons and two weeks of sample orders (set `SEED_DEMO_ORDERS=false` to skip the orders). The sample orders belong to a customer on a reserved `example.com` address with a random password, so nobody can sign in as them and no real person gets emailed about them.
 Running it again is safe; it never deletes data. Existing databases from earlier versions are upgraded in place (missing columns are added, and text columns that are too short are widened, e.g. an old `orders.payment_method VARCHAR(20)` that couldn't hold "Cash on Delivery (COD)").
 
 ### 4. Run everything
@@ -122,16 +124,18 @@ How a card payment works:
 
 ---
 
-## 🔑 Demo accounts & codes
+## 🔑 Accounts & codes
 
 | What | Value |
 |---|---|
-| Demo shopper | `demo@nova.store` / `Demo@1234` (or the *demo account* button on the login page) |
-| Admin | `nova_admin` / `Nova@Admin#2024` — **change it** under *Security & Password* |
+| Shopper | Register on the site, or sign in with Google. There is no shared demo account |
+| Admin | The `ADMIN_USERNAME` and `ADMIN_PASSWORD` you set. They create the first admin when the `admins` table is empty; change them later under *Security & Password* |
 | Coupons | `WELCOME10` (10% off) · `SAVE15` ($15 off $100+) · `NOVA20` (20% off $150+) · `FREESHIP` |
 | Stripe test cards | `4242 4242 4242 4242` (paid) · `4000 0000 0000 0002` (declined), any future expiry, any CVC. Needs `STRIPE_SECRET_KEY` (see *Card payments*) |
 
-> Password-reset codes are emailed. Without SMTP they're printed to the API terminal instead, and in development they're also shown on screen so you can test the flow; with `NODE_ENV=production` they never appear on screen or in the logs.
+There are no built-in passwords. Without `ADMIN_USERNAME` and `ADMIN_PASSWORD` a new database gets no admin account, and the API logs a warning saying so. An older database that still has the seeded test shopper has that account locked on the next start: its orders stay, but it can no longer sign in.
+
+> Password-reset codes are emailed. Without email set up in development they're printed to the API terminal instead; with `NODE_ENV=production` they never appear in the logs.
 
 ---
 
@@ -238,7 +242,7 @@ ecommerce-website/
 
 ## 🛡 Before going live
 - Set `NODE_ENV=production`, long random `JWT_SECRET` / `ADMIN_SECRET`, and `CLIENT_URL` (CORS allow-list).
-- Change the default admin password.
+- Use your own strong `ADMIN_PASSWORD`. If an admin account was ever created with the old default password from earlier versions of this project, change it under *Security & Password*: it's public in this repository's history.
 - Uploaded photos live on the API server's disk (`backend/uploads/`). On hosts with a temporary file system (Render, Railway, Heroku) mount a persistent volume there or add a cloud `STORAGE_DRIVER`, otherwise photos vanish on redeploy.
 - Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` and `MAIL_FROM` (see *Email* above); without them customers get no order, status or password-reset emails. Card payments use Stripe **test mode**; to take real money, switch to live keys with `STRIPE_ALLOW_LIVE=true`, add the webhook endpoint in the Stripe dashboard, and remember Stripe needs a business in a supported country.
 - Have the Privacy and Terms pages reviewed — they're plain-language templates.

@@ -42,15 +42,22 @@ import {
   EyeOff,
   Key,
   BarChart3,
+  Check,
+  Menu,
+  type LucideIcon,
 } from "lucide-react";
 
 import { API_BASE_URL } from "../../src/config/api";
 import AdminAnalytics from "./AdminAnalytics";
 import AdminCoupons from "./AdminCoupons";
+import AdminModal from "./AdminModal";
+import { OrderCard, OrderStatusSelect, ProductCard, StockBadge } from "./AdminCards";
+import { getColorHex, type Order } from "./orderTypes";
 import ImageUploader from "./ImageUploader";
 import StatusChangeModal from "./StatusChangeModal";
 import { useToast } from "../../src/context/ToastContext";
 import { getImageUrl } from "../../src/lib/catalog";
+import { useMediaQuery } from "../../src/lib/useMediaQuery";
 import { products as fallbackProducts, type Product, type ProductColorVariant } from "../../src/data/products";
 
 const PRESET_COLORS = [
@@ -66,54 +73,14 @@ const PRESET_COLORS = [
   { name: "Purple", hex: "#9333ea" },
 ];
 
-function getColorHex(colorName?: string): string {
-  if (!colorName) return "#f97316";
-  const lower = colorName.toLowerCase();
-  if (lower.includes("black") || lower.includes("dark") || lower.includes("stealth") || lower.includes("charcoal")) return "#111827";
-  if (lower.includes("white") || lower.includes("clean") || lower.includes("pure")) return "#ffffff";
-  if (lower.includes("red") || lower.includes("crimson")) return "#dc2626";
-  if (lower.includes("blue") || lower.includes("navy") || lower.includes("cobalt")) return "#2563eb";
-  if (lower.includes("green") || lower.includes("electric") || lower.includes("emerald")) return "#16a34a";
-  if (lower.includes("grey") || lower.includes("gray") || lower.includes("heather")) return "#6b7280";
-  if (lower.includes("brown")) return "#78350f";
-  if (lower.includes("beige")) return "#d6c7b2";
-  if (lower.includes("pink")) return "#ec4899";
-  if (lower.includes("purple")) return "#9333ea";
-  if (lower.includes("yellow") || lower.includes("gold")) return "#eab308";
-  if (lower.includes("orange")) return "#ea580c";
-  return "#f97316";
-}
-
-interface OrderItem {
-  id: number;
-  product_id: number;
-  quantity: number;
-  price: string | number;
-  color?: string;
-  color_image?: string;
-  product_name?: string;
-  product_image?: string;
-}
-
-interface Order {
-  id: number;
-  user_name?: string;
-  user_email?: string;
-  total_amount: string | number;
-  status: string;
-  address?: string;
-  city?: string;
-  country?: string;
-  mobile_number?: string;
-  payment_method?: string;
-  created_at: string;
-  items?: OrderItem[];
-}
+type AdminTab = "overview" | "orders" | "products" | "add-product" | "coupons" | "settings";
 
 export default function Admin() {
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "orders" | "products" | "add-product" | "coupons" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   // Security & Password Settings State
   const [adminUsername, setAdminUsername] = useState("");
@@ -767,14 +734,415 @@ export default function Admin() {
     0
   );
 
+  const tabs: { id: AdminTab; label: string; title: string; icon: LucideIcon }[] = [
+    { id: "overview", label: "Overview", title: "Overview", icon: BarChart3 },
+    { id: "orders", label: `Customer Orders (${orders.length})`, title: "Customer Orders", icon: Package },
+    { id: "products", label: `Manage Products (${products.length})`, title: "Manage Products", icon: Box },
+    { id: "add-product", label: "Add New Product", title: "Add New Product", icon: Plus },
+    { id: "coupons", label: "Coupons", title: "Coupons", icon: Tag },
+    { id: "settings", label: "Security & Password", title: "Security & Password", icon: Key },
+  ];
+  const activeTitle = tabs.find((tab) => tab.id === activeTab)?.title ?? "Store Dashboard";
+  const hasProductFilters = productStatusFilter !== "all" || productCategoryFilter !== "all" || Boolean(productSearch);
+
+  const handleLogout = () => {
+    localStorage.removeItem("nova_admin_token");
+    navigate("/admin-login");
+  };
+
+  const goToTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    setMenuOpen(false);
+    window.scrollTo({ top: 0 });
+  };
+
+  const productFilters = (
+    <>
+                    {/* Header */}
+                    <div className="hidden lg:flex items-center justify-between pb-3 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                          <SlidersHorizontal size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900">Inventory Filters</h3>
+                          <p className="text-[11px] text-gray-400">Filter by stock & category</p>
+                        </div>
+                      </div>
+                      {(productStatusFilter !== "all" ||
+                        productCategoryFilter !== "all" ||
+                        productSearch) && (
+                        <button
+                          onClick={handleResetFilters}
+                          className="text-[11px] font-bold text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                          title="Reset all filters"
+                        >
+                          <RotateCcw size={11} />
+                          Reset
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick Search */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                        Search Products
+                      </label>
+                      <div className="relative">
+                        <Search
+                          size={14}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Search title, category..."
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-7 py-2.5 lg:py-2 text-base lg:text-xs font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition"
+                        />
+                        {productSearch && (
+                          <button
+                            onClick={() => setProductSearch("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Product Stock Statuses */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <Package size={14} className="text-orange-500" />
+                          Stock Status
+                        </h4>
+                        {productStatusFilter !== "all" && (
+                          <button
+                            onClick={() => setProductStatusFilter("all")}
+                            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
+                          >
+                            All
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {/* All Products */}
+                        <button
+                          onClick={() => setProductStatusFilter("all")}
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "all"
+                              ? "bg-gray-900 text-white shadow-xs"
+                              : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Box size={14} />
+                            All Items
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "all"
+                                ? "bg-white/20 text-white"
+                                : "bg-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {statusCounts.all}
+                          </span>
+                        </button>
+
+                        {/* In Stock */}
+                        <button
+                          onClick={() => setProductStatusFilter("in-stock")}
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "in-stock"
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <CheckCircle2
+                              size={14}
+                              className={
+                                productStatusFilter === "in-stock"
+                                  ? "text-white"
+                                  : "text-emerald-600"
+                              }
+                            />
+                            In Stock (&gt; 5)
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "in-stock"
+                                ? "bg-white/20 text-white"
+                                : "bg-emerald-200 text-emerald-900"
+                            }`}
+                          >
+                            {statusCounts.inStock}
+                          </span>
+                        </button>
+
+                        {/* Low Stock */}
+                        <button
+                          onClick={() => setProductStatusFilter("low-stock")}
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "low-stock"
+                              ? "bg-amber-500 text-white shadow-xs"
+                              : "bg-amber-50 text-amber-900 hover:bg-amber-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <AlertTriangle
+                              size={14}
+                              className={
+                                productStatusFilter === "low-stock"
+                                  ? "text-white"
+                                  : "text-amber-600"
+                              }
+                            />
+                            Low Stock (1 - 5)
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "low-stock"
+                                ? "bg-white/20 text-white"
+                                : "bg-amber-200 text-amber-900"
+                            }`}
+                          >
+                            {statusCounts.lowStock}
+                          </span>
+                        </button>
+
+                        {/* Out of Stock */}
+                        <button
+                          onClick={() => setProductStatusFilter("out-of-stock")}
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "out-of-stock"
+                              ? "bg-red-600 text-white shadow-xs"
+                              : "bg-red-50 text-red-800 hover:bg-red-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <XCircle
+                              size={14}
+                              className={
+                                productStatusFilter === "out-of-stock"
+                                  ? "text-white"
+                                  : "text-red-600"
+                              }
+                            />
+                            Out of Stock (0)
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "out-of-stock"
+                                ? "bg-white/20 text-white"
+                                : "bg-red-200 text-red-900"
+                            }`}
+                          >
+                            {statusCounts.outOfStock}
+                          </span>
+                        </button>
+
+                        {/* On Sale Deals */}
+                        <button
+                          onClick={() =>
+                            setProductStatusFilter(
+                              productStatusFilter === "on-sale" ? "all" : "on-sale"
+                            )
+                          }
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "on-sale"
+                              ? "bg-rose-600 text-white shadow-xs"
+                              : "bg-rose-50 text-rose-900 hover:bg-rose-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Flame
+                              size={14}
+                              className={
+                                productStatusFilter === "on-sale"
+                                  ? "text-white fill-white"
+                                  : "text-rose-600 fill-rose-600"
+                              }
+                            />
+                            On Sale Deals
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "on-sale"
+                                ? "bg-white/20 text-white"
+                                : "bg-rose-200 text-rose-900"
+                            }`}
+                          >
+                            {statusCounts.onSale}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Review Statuses */}
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5 mb-2.5">
+                        <Star size={14} className="text-yellow-500 fill-yellow-500" />
+                        Review Status
+                      </h4>
+
+                      <div className="space-y-1.5">
+                        <button
+                          onClick={() =>
+                            setProductStatusFilter(
+                              productStatusFilter === "no-reviews" ? "all" : "no-reviews"
+                            )
+                          }
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "no-reviews"
+                              ? "bg-purple-600 text-white shadow-xs"
+                              : "bg-purple-50 text-purple-900 hover:bg-purple-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Sparkles
+                              size={14}
+                              className={
+                                productStatusFilter === "no-reviews"
+                                  ? "text-white"
+                                  : "text-purple-600"
+                              }
+                            />
+                            New (No Reviews)
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "no-reviews"
+                                ? "bg-white/20 text-white"
+                                : "bg-purple-200 text-purple-900"
+                            }`}
+                          >
+                            {statusCounts.noReviews}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            setProductStatusFilter(
+                              productStatusFilter === "with-reviews" ? "all" : "with-reviews"
+                            )
+                          }
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2.5 rounded-2xl text-xs font-bold transition text-left ${
+                            productStatusFilter === "with-reviews"
+                              ? "bg-amber-600 text-white shadow-xs"
+                              : "bg-amber-50/70 text-amber-900 hover:bg-amber-100/80"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Star
+                              size={14}
+                              className={
+                                productStatusFilter === "with-reviews"
+                                  ? "text-white fill-white"
+                                  : "text-amber-500 fill-amber-500"
+                              }
+                            />
+                            Has Customer Reviews
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productStatusFilter === "with-reviews"
+                                ? "bg-white/20 text-white"
+                                : "bg-amber-200 text-amber-900"
+                            }`}
+                          >
+                            {statusCounts.withReviews}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Category Filter */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <Layers size={14} className="text-orange-500" />
+                          Categories
+                        </h4>
+                        {productCategoryFilter !== "all" && (
+                          <button
+                            onClick={() => setProductCategoryFilter("all")}
+                            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
+                          >
+                            All
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 lg:max-h-60 lg:overflow-y-auto lg:pr-1">
+                        <button
+                          onClick={() => setProductCategoryFilter("all")}
+                          className={`w-full flex items-center justify-between px-3 py-3 lg:py-2 rounded-xl text-xs font-bold transition text-left ${
+                            productCategoryFilter === "all"
+                              ? "bg-orange-500 text-white shadow-xs"
+                              : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Tag size={13} />
+                            All Categories
+                          </span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              productCategoryFilter === "all"
+                                ? "bg-white/20 text-white"
+                                : "bg-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {products.length}
+                          </span>
+                        </button>
+
+                        {allCategories.map((cat) => {
+                          const isSelected =
+                            productCategoryFilter.toLowerCase() === cat.toLowerCase();
+                          const count = categoryCounts[cat] || 0;
+                          return (
+                            <button
+                              key={cat}
+                              onClick={() => setProductCategoryFilter(isSelected ? "all" : cat)}
+                              className={`w-full flex items-center justify-between px-3 py-3 lg:py-2 rounded-xl text-xs font-bold transition text-left ${
+                                isSelected
+                                  ? "bg-orange-500 text-white shadow-xs"
+                                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                              }`}
+                            >
+                              <span className="truncate pr-2">{cat}</span>
+                              <span
+                                className={`text-[11px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                                  isSelected
+                                    ? "bg-white/20 text-white"
+                                    : "bg-gray-200 text-gray-700"
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-between">
+    // Below 1024px every field uses 16px text, otherwise iOS zooms the page when one is focused.
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-between max-lg:[&_input]:text-base max-lg:[&_select]:text-base max-lg:[&_textarea]:text-base">
       <div>
         {/* Dedicated Admin Portal Navigation */}
         <header className="bg-gray-950 border-b border-gray-800 text-white sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-8 h-14 md:h-16 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 shrink-0 rounded-xl bg-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
                 <ShieldCheck size={20} />
               </div>
               <div>
@@ -783,7 +1151,18 @@ export default function Admin() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              className="md:hidden inline-flex h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare-glow"
+            >
+              <Menu size={18} aria-hidden />
+              Menu
+            </button>
+
+            <div className="hidden md:flex items-center gap-4">
               <button
                 onClick={() => setActiveTab("settings")}
                 className={`text-xs font-semibold transition flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer ${
@@ -803,10 +1182,7 @@ export default function Admin() {
                 Data Hub
               </Link>
               <button
-                onClick={() => {
-                  localStorage.removeItem("nova_admin_token");
-                  navigate("/admin-login");
-                }}
+                onClick={handleLogout}
                 className="text-xs font-bold text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition"
               >
                 <LogOut size={14} />
@@ -817,34 +1193,35 @@ export default function Admin() {
         </header>
 
         {/* Header */}
-        <section className="bg-gradient-to-r from-gray-900 to-gray-800 text-white py-12">
-          <div className="max-w-7xl mx-auto px-5 lg:px-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-            <div>
-              <div className="inline-flex items-center gap-2 bg-orange-500 text-white px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3">
+        <section className="bg-gradient-to-r from-gray-900 to-gray-800 text-white py-4 md:py-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-8 flex items-center md:items-end justify-between gap-4 md:gap-6">
+            <div className="min-w-0">
+              <div className="hidden md:inline-flex items-center gap-2 bg-orange-500 text-white px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3">
                 <LayoutDashboard size={14} />
                 Admin Portal
               </div>
-              <h1 className="text-3xl md:text-5xl font-black">Store Dashboard</h1>
-              <p className="text-gray-400 mt-2 text-sm">
+              <h1 className="text-xl md:text-5xl font-black truncate">
+                <span className="md:hidden">{activeTitle}</span>
+                <span className="hidden md:inline">Store Dashboard</span>
+              </h1>
+              <p className="hidden md:block text-gray-400 mt-2 text-sm">
                 Manage live products, stock inventory, and customer delivery orders.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
               <button
                 onClick={fetchData}
                 disabled={loading}
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-full text-xs font-bold backdrop-blur-md transition disabled:opacity-50"
+                aria-label={loading ? "Loading" : "Refresh data"}
+                className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white h-11 w-11 md:h-auto md:w-auto md:px-5 md:py-2.5 rounded-full text-xs font-bold backdrop-blur-md transition disabled:opacity-50"
               >
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                {loading ? "Loading..." : "Refresh Data"}
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden />
+                <span className="hidden md:inline">{loading ? "Loading..." : "Refresh Data"}</span>
               </button>
               <button
-                onClick={() => {
-                  localStorage.removeItem("nova_admin_token");
-                  navigate("/admin-login");
-                }}
-                className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 px-5 py-2.5 rounded-full text-xs font-bold backdrop-blur-md transition"
+                onClick={handleLogout}
+                className="hidden md:flex items-center gap-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 px-5 py-2.5 rounded-full text-xs font-bold backdrop-blur-md transition"
               >
                 <LogOut size={14} />
                 Logout
@@ -853,118 +1230,71 @@ export default function Admin() {
           </div>
         </section>
 
-        <main className="max-w-7xl mx-auto px-5 lg:px-8 py-10">
+        <main className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-8 py-4 md:py-10">
           {/* Metric Cards (the Overview and Coupons tabs have their own) */}
-          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 ${activeTab === "overview" || activeTab === "coupons" ? "hidden" : ""}`}>
-            <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Total Products
+          <div className={`grid grid-cols-3 gap-2 sm:gap-6 mb-4 md:mb-10 ${activeTab === "overview" || activeTab === "coupons" ? "hidden" : ""}`}>
+            <div className="bg-white p-3 sm:p-6 rounded-2xl sm:rounded-3xl border shadow-sm flex items-center justify-between min-w-0">
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-bold text-gray-400 sm:uppercase sm:tracking-wider">
+                  <span className="sm:hidden">Products</span>
+                  <span className="hidden sm:inline">Total Products</span>
                 </p>
-                <h3 className="text-3xl font-black text-gray-900 mt-2">
+                <h3 className="text-lg sm:text-3xl font-black text-gray-900 mt-0.5 sm:mt-2 truncate tabular-nums">
                   {products.length}
                 </h3>
               </div>
-              <div className="bg-blue-100 text-blue-600 p-4 rounded-2xl">
+              <div className="hidden sm:block bg-blue-100 text-blue-600 p-4 rounded-2xl">
                 <Box size={28} />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Total Orders
+            <div className="bg-white p-3 sm:p-6 rounded-2xl sm:rounded-3xl border shadow-sm flex items-center justify-between min-w-0">
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-bold text-gray-400 sm:uppercase sm:tracking-wider">
+                  <span className="sm:hidden">Orders</span>
+                  <span className="hidden sm:inline">Total Orders</span>
                 </p>
-                <h3 className="text-3xl font-black text-gray-900 mt-2">
+                <h3 className="text-lg sm:text-3xl font-black text-gray-900 mt-0.5 sm:mt-2 truncate tabular-nums">
                   {orders.length}
                 </h3>
               </div>
-              <div className="bg-orange-100 text-orange-600 p-4 rounded-2xl">
+              <div className="hidden sm:block bg-orange-100 text-orange-600 p-4 rounded-2xl">
                 <Package size={28} />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Total Revenue
+            <div className="bg-white p-3 sm:p-6 rounded-2xl sm:rounded-3xl border shadow-sm flex items-center justify-between min-w-0">
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-bold text-gray-400 sm:uppercase sm:tracking-wider">
+                  <span className="sm:hidden">Revenue</span>
+                  <span className="hidden sm:inline">Total Revenue</span>
                 </p>
-                <h3 className="text-3xl font-black text-emerald-600 mt-2">
+                <h3 className="text-lg sm:text-3xl font-black text-emerald-600 mt-0.5 sm:mt-2 truncate tabular-nums" title={`$${totalRevenue.toFixed(2)}`}>
                   ${totalRevenue.toFixed(2)}
                 </h3>
               </div>
-              <div className="bg-emerald-100 text-emerald-600 p-4 rounded-2xl">
+              <div className="hidden sm:block bg-emerald-100 text-emerald-600 p-4 rounded-2xl">
                 <DollarSign size={28} />
               </div>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex border-b border-gray-200 mb-8 gap-4 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === "overview"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              <BarChart3 size={16} />
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab("orders")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 ${
-                activeTab === "orders"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Customer Orders ({orders.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("products")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 ${
-                activeTab === "products"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Manage Products ({products.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("add-product")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === "add-product"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              <Plus size={16} />
-              Add New Product
-            </button>
-            <button
-              onClick={() => setActiveTab("coupons")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 ${
-                activeTab === "coupons"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              <Tag size={16} />
-              Coupons
-            </button>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "settings"
-                  ? "border-orange-500 text-orange-500"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              <Key size={16} />
-              Security &amp; Password
-            </button>
+          <div className="hidden md:flex border-b border-gray-200 mb-8 gap-4 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`pb-4 text-sm font-bold border-b-2 transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === tab.id
+                    ? "border-orange-500 text-orange-500"
+                    : "border-transparent text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                <tab.icon size={16} />
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {activeTab === "overview" && (
@@ -975,11 +1305,11 @@ export default function Admin() {
 
           {/* Tab 1: Orders List */}
           {activeTab === "orders" && (
-            <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-6">
+            <div className="lg:bg-white lg:rounded-3xl lg:border lg:shadow-sm lg:p-6 space-y-4 lg:space-y-6">
               {/* Header and Filter Controls Box */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 lg:gap-4 lg:pb-6 lg:border-b lg:border-gray-100">
                 <div>
-                  <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
+                  <h2 className="hidden md:flex text-xl md:text-2xl font-black text-gray-900 tracking-tight items-center gap-2">
                     <Package className="text-orange-500" size={24} />
                     Live Orders Overview
                   </h2>
@@ -993,7 +1323,7 @@ export default function Admin() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   {/* Status Selection Box */}
                   <div
-                    className={`flex items-center gap-2.5 border rounded-2xl px-4 py-2 transition shadow-xs ${
+                    className={`hidden sm:flex items-center gap-2.5 border rounded-2xl px-4 py-2 transition shadow-xs ${
                       orderStatusFilter === "Pending"
                         ? "bg-amber-50/90 border-amber-300 text-amber-900"
                         : orderStatusFilter === "Processing"
@@ -1047,7 +1377,7 @@ export default function Admin() {
                       placeholder="Search order #, customer, city..."
                       value={orderSearchQuery}
                       onChange={(e) => setOrderSearchQuery(e.target.value)}
-                      className="w-full sm:w-60 bg-gray-50 border border-gray-200 rounded-2xl pl-9 pr-8 py-2 text-xs font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition"
+                      className="w-full sm:w-60 bg-white sm:bg-gray-50 border border-gray-200 rounded-2xl pl-9 pr-9 py-2.5 sm:py-2 text-xs font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition"
                     />
                     {orderSearchQuery && (
                       <button
@@ -1063,20 +1393,21 @@ export default function Admin() {
               </div>
 
               {/* Quick Status Filter Buttons with Live Badges */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex sm:flex-wrap items-center gap-2 overflow-x-auto [scrollbar-width:none] -mx-4 px-4 sm:mx-0 sm:px-0">
                 {[
                   { label: "All Orders", value: "All", count: orderCounts.all },
                   { label: "Pending", value: "Pending", count: orderCounts.pending },
                   { label: "Processing", value: "Processing", count: orderCounts.processing },
                   { label: "Shipped", value: "Shipped", count: orderCounts.shipped },
                   { label: "Delivered", value: "Delivered", count: orderCounts.delivered },
+                  { label: "Cancelled", value: "Cancelled", count: orderCounts.cancelled },
                 ].map((st) => {
                   const isActive = orderStatusFilter.toLowerCase() === st.value.toLowerCase();
                   return (
                     <button
                       key={st.value}
                       onClick={() => setOrderStatusFilter(st.value)}
-                      className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                      className={`inline-flex shrink-0 items-center gap-2 px-3.5 py-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition ${
                         isActive
                           ? st.value === "Pending"
                             ? "bg-amber-500 text-white shadow-xs"
@@ -1086,6 +1417,8 @@ export default function Admin() {
                             ? "bg-purple-600 text-white shadow-xs"
                             : st.value === "Delivered"
                             ? "bg-emerald-600 text-white shadow-xs"
+                            : st.value === "Cancelled"
+                            ? "bg-red-600 text-white shadow-xs"
                             : "bg-gray-900 text-white shadow-xs"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200/80"
                       }`}
@@ -1110,7 +1443,7 @@ export default function Admin() {
                       setOrderStatusFilter("All");
                       setOrderSearchQuery("");
                     }}
-                    className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-800 underline decoration-dashed transition"
+                    className="sm:ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-800 underline decoration-dashed transition"
                   >
                     <RotateCcw size={12} />
                     Reset Order Filters
@@ -1147,7 +1480,7 @@ export default function Admin() {
                     Show All Orders
                   </button>
                 </div>
-              ) : (
+              ) : isDesktop ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-sm">
                     <thead>
@@ -1218,29 +1551,11 @@ export default function Admin() {
                             {order.address ? `${order.address}, ${order.city}` : "N/A"}
                           </td>
                           <td className="py-4">
-                            <select
-                              value={order.status}
-                              onChange={(e) => setStatusChange({ order, status: e.target.value })}
-                              className={`border rounded-xl px-3 py-1.5 text-xs font-bold outline-none cursor-pointer transition ${
-                                order.status === "Pending"
-                                  ? "bg-amber-50 text-amber-800 border-amber-300"
-                                  : order.status === "Processing"
-                                  ? "bg-blue-50 text-blue-800 border-blue-300"
-                                  : order.status === "Shipped"
-                                  ? "bg-purple-50 text-purple-800 border-purple-300"
-                                  : order.status === "Delivered"
-                                  ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                                  : order.status === "Cancelled"
-                                  ? "bg-red-50 text-red-800 border-red-300"
-                                  : "bg-white text-gray-800 border-gray-200"
-                              }`}
-                            >
-                              <option value="Pending">Pending</option>
-                              <option value="Processing">Processing</option>
-                              <option value="Shipped">Shipped</option>
-                              <option value="Delivered">Delivered</option>
-                              <option value="Cancelled">Cancelled</option>
-                            </select>
+                            <OrderStatusSelect
+                              status={order.status}
+                              onChange={(status) => setStatusChange({ order, status })}
+                              label={`Status of order #${order.id}`}
+                            />
                           </td>
                           <td className="py-4 text-right">
                             <button
@@ -1257,17 +1572,28 @@ export default function Admin() {
                     </tbody>
                   </table>
                 </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {filteredOrders.map((order) => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      onStatusChange={(status) => setStatusChange({ order, status })}
+                      onView={() => setSelectedOrderDetails(order)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )}
 
           {/* Tab 2: Products List with Status & Category Slidebar */}
           {activeTab === "products" && (
-            <div className="space-y-6">
+            <div className="space-y-4 lg:space-y-6">
               {/* Top Controls Bar */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border shadow-sm">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 lg:gap-4 lg:bg-white lg:p-5 lg:rounded-3xl lg:border lg:shadow-sm">
                 <div>
-                  <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
+                  <h2 className="hidden md:block text-xl md:text-2xl font-black text-gray-900 tracking-tight">
                     Product Catalog & Inventory
                   </h2>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1276,17 +1602,30 @@ export default function Admin() {
                   </p>
                 </div>
 
+                {/* Search stays in reach on phones; the rest of the filters live in a sheet */}
+                <div className="relative lg:hidden">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden />
+                  <input
+                    type="search"
+                    aria-label="Search products"
+                    placeholder="Search products..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="w-full sm:w-60 bg-white border border-gray-200 rounded-2xl pl-9 pr-4 py-2.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition"
+                  />
+                </div>
+
                 <div className="flex items-center gap-2.5 w-full sm:w-auto">
                   <button
-                    onClick={() => setShowMobileSidebar(!showMobileSidebar)}
-                    className="lg:hidden flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-2xl font-bold text-xs shadow-md transition"
+                    onClick={() => setShowMobileSidebar(true)}
+                    className="lg:hidden flex-1 sm:flex-initial flex h-11 items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 rounded-2xl font-bold text-sm shadow-md transition"
                   >
                     <SlidersHorizontal size={14} />
-                    {showMobileSidebar ? "Hide Filters" : "Filter Slidebar"}
+                    Filters{hasProductFilters ? " (on)" : ""}
                   </button>
                   <button
                     onClick={() => setActiveTab("add-product")}
-                    className="flex items-center gap-1.5 bg-gray-900 hover:bg-black text-white px-4 py-2.5 rounded-2xl font-bold text-xs transition shadow-sm"
+                    className="flex-1 sm:flex-initial flex h-11 lg:h-auto items-center justify-center gap-1.5 bg-gray-900 hover:bg-black text-white px-4 lg:py-2.5 rounded-2xl font-bold text-sm lg:text-xs transition shadow-sm"
                   >
                     <Plus size={14} />
                     Add Product
@@ -1362,392 +1701,16 @@ export default function Admin() {
               )}
 
               {/* Two-Column Layout: Slidebar + Table */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-8 items-start">
                 {/* 1. Products Slidebar (Filters & Statuses) */}
-                <aside
-                  className={`lg:col-span-4 xl:col-span-3 ${
-                    showMobileSidebar ? "block" : "hidden lg:block"
-                  } transition-all`}
-                >
+                <aside className="hidden lg:block lg:col-span-4 xl:col-span-3">
                   <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-5 space-y-6 lg:sticky lg:top-24">
-                    {/* Header */}
-                    <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
-                          <SlidersHorizontal size={16} />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-gray-900">Inventory Slidebar</h3>
-                          <p className="text-[11px] text-gray-400">Filter by stock & category</p>
-                        </div>
-                      </div>
-                      {(productStatusFilter !== "all" ||
-                        productCategoryFilter !== "all" ||
-                        productSearch) && (
-                        <button
-                          onClick={handleResetFilters}
-                          className="text-[11px] font-bold text-orange-600 hover:text-orange-800 flex items-center gap-1"
-                          title="Reset all filters"
-                        >
-                          <RotateCcw size={11} />
-                          Reset
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Quick Search */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                        Search Products
-                      </label>
-                      <div className="relative">
-                        <Search
-                          size={14}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Search title, category..."
-                          value={productSearch}
-                          onChange={(e) => setProductSearch(e.target.value)}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-7 py-2 text-xs font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition"
-                        />
-                        {productSearch && (
-                          <button
-                            onClick={() => setProductSearch("")}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                          >
-                            <X size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Product Stock Statuses */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2.5">
-                        <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <Package size={14} className="text-orange-500" />
-                          Stock Status
-                        </h4>
-                        {productStatusFilter !== "all" && (
-                          <button
-                            onClick={() => setProductStatusFilter("all")}
-                            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
-                          >
-                            All
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="space-y-1.5">
-                        {/* All Products */}
-                        <button
-                          onClick={() => setProductStatusFilter("all")}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "all"
-                              ? "bg-gray-900 text-white shadow-xs"
-                              : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Box size={14} />
-                            All Items
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "all"
-                                ? "bg-white/20 text-white"
-                                : "bg-gray-200 text-gray-700"
-                            }`}
-                          >
-                            {statusCounts.all}
-                          </span>
-                        </button>
-
-                        {/* In Stock */}
-                        <button
-                          onClick={() => setProductStatusFilter("in-stock")}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "in-stock"
-                              ? "bg-emerald-600 text-white shadow-xs"
-                              : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <CheckCircle2
-                              size={14}
-                              className={
-                                productStatusFilter === "in-stock"
-                                  ? "text-white"
-                                  : "text-emerald-600"
-                              }
-                            />
-                            In Stock (&gt; 5)
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "in-stock"
-                                ? "bg-white/20 text-white"
-                                : "bg-emerald-200 text-emerald-900"
-                            }`}
-                          >
-                            {statusCounts.inStock}
-                          </span>
-                        </button>
-
-                        {/* Low Stock */}
-                        <button
-                          onClick={() => setProductStatusFilter("low-stock")}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "low-stock"
-                              ? "bg-amber-500 text-white shadow-xs"
-                              : "bg-amber-50 text-amber-900 hover:bg-amber-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <AlertTriangle
-                              size={14}
-                              className={
-                                productStatusFilter === "low-stock"
-                                  ? "text-white"
-                                  : "text-amber-600"
-                              }
-                            />
-                            Low Stock (1 - 5)
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "low-stock"
-                                ? "bg-white/20 text-white"
-                                : "bg-amber-200 text-amber-900"
-                            }`}
-                          >
-                            {statusCounts.lowStock}
-                          </span>
-                        </button>
-
-                        {/* Out of Stock */}
-                        <button
-                          onClick={() => setProductStatusFilter("out-of-stock")}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "out-of-stock"
-                              ? "bg-red-600 text-white shadow-xs"
-                              : "bg-red-50 text-red-800 hover:bg-red-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <XCircle
-                              size={14}
-                              className={
-                                productStatusFilter === "out-of-stock"
-                                  ? "text-white"
-                                  : "text-red-600"
-                              }
-                            />
-                            Out of Stock (0)
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "out-of-stock"
-                                ? "bg-white/20 text-white"
-                                : "bg-red-200 text-red-900"
-                            }`}
-                          >
-                            {statusCounts.outOfStock}
-                          </span>
-                        </button>
-
-                        {/* On Sale Deals */}
-                        <button
-                          onClick={() =>
-                            setProductStatusFilter(
-                              productStatusFilter === "on-sale" ? "all" : "on-sale"
-                            )
-                          }
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "on-sale"
-                              ? "bg-rose-600 text-white shadow-xs"
-                              : "bg-rose-50 text-rose-900 hover:bg-rose-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Flame
-                              size={14}
-                              className={
-                                productStatusFilter === "on-sale"
-                                  ? "text-white fill-white"
-                                  : "text-rose-600 fill-rose-600"
-                              }
-                            />
-                            On Sale Deals
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "on-sale"
-                                ? "bg-white/20 text-white"
-                                : "bg-rose-200 text-rose-900"
-                            }`}
-                          >
-                            {statusCounts.onSale}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Review Statuses */}
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5 mb-2.5">
-                        <Star size={14} className="text-yellow-500 fill-yellow-500" />
-                        Review Status
-                      </h4>
-
-                      <div className="space-y-1.5">
-                        <button
-                          onClick={() =>
-                            setProductStatusFilter(
-                              productStatusFilter === "no-reviews" ? "all" : "no-reviews"
-                            )
-                          }
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "no-reviews"
-                              ? "bg-purple-600 text-white shadow-xs"
-                              : "bg-purple-50 text-purple-900 hover:bg-purple-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Sparkles
-                              size={14}
-                              className={
-                                productStatusFilter === "no-reviews"
-                                  ? "text-white"
-                                  : "text-purple-600"
-                              }
-                            />
-                            New (No Reviews)
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "no-reviews"
-                                ? "bg-white/20 text-white"
-                                : "bg-purple-200 text-purple-900"
-                            }`}
-                          >
-                            {statusCounts.noReviews}
-                          </span>
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            setProductStatusFilter(
-                              productStatusFilter === "with-reviews" ? "all" : "with-reviews"
-                            )
-                          }
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition text-left ${
-                            productStatusFilter === "with-reviews"
-                              ? "bg-amber-600 text-white shadow-xs"
-                              : "bg-amber-50/70 text-amber-900 hover:bg-amber-100/80"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Star
-                              size={14}
-                              className={
-                                productStatusFilter === "with-reviews"
-                                  ? "text-white fill-white"
-                                  : "text-amber-500 fill-amber-500"
-                              }
-                            />
-                            Has Customer Reviews
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productStatusFilter === "with-reviews"
-                                ? "bg-white/20 text-white"
-                                : "bg-amber-200 text-amber-900"
-                            }`}
-                          >
-                            {statusCounts.withReviews}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Category Filter */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2.5">
-                        <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <Layers size={14} className="text-orange-500" />
-                          Categories
-                        </h4>
-                        {productCategoryFilter !== "all" && (
-                          <button
-                            onClick={() => setProductCategoryFilter("all")}
-                            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
-                          >
-                            All
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                        <button
-                          onClick={() => setProductCategoryFilter("all")}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition text-left ${
-                            productCategoryFilter === "all"
-                              ? "bg-orange-500 text-white shadow-xs"
-                              : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Tag size={13} />
-                            All Categories
-                          </span>
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                              productCategoryFilter === "all"
-                                ? "bg-white/20 text-white"
-                                : "bg-gray-200 text-gray-700"
-                            }`}
-                          >
-                            {products.length}
-                          </span>
-                        </button>
-
-                        {allCategories.map((cat) => {
-                          const isSelected =
-                            productCategoryFilter.toLowerCase() === cat.toLowerCase();
-                          const count = categoryCounts[cat] || 0;
-                          return (
-                            <button
-                              key={cat}
-                              onClick={() => setProductCategoryFilter(isSelected ? "all" : cat)}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition text-left ${
-                                isSelected
-                                  ? "bg-orange-500 text-white shadow-xs"
-                                  : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                              }`}
-                            >
-                              <span className="truncate pr-2">{cat}</span>
-                              <span
-                                className={`text-[11px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                                  isSelected
-                                    ? "bg-white/20 text-white"
-                                    : "bg-gray-200 text-gray-700"
-                                }`}
-                              >
-                                {count}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {productFilters}
                   </div>
                 </aside>
 
                 {/* 2. Filtered Products Table */}
-                <div className="lg:col-span-8 xl:col-span-9 bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="lg:col-span-8 xl:col-span-9 lg:bg-white lg:rounded-3xl lg:border lg:border-gray-200 lg:shadow-sm lg:overflow-hidden">
                   {filteredProducts.length === 0 ? (
                     <div className="py-20 text-center px-4">
                       <div className="w-16 h-16 bg-orange-100 text-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1767,6 +1730,12 @@ export default function Admin() {
                         <RotateCcw size={14} />
                         Reset All Filters
                       </button>
+                    </div>
+                  ) : !isDesktop ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {filteredProducts.map((p) => (
+                        <ProductCard key={p.id} product={p} onEdit={() => handleOpenEditModal(p)} onDelete={() => handleDeleteProduct(p.id)} />
+                      ))}
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
@@ -1833,22 +1802,7 @@ export default function Admin() {
 
                                 {/* Stock Status Badge */}
                                 <td className="py-4 px-4">
-                                  {stockNum > 5 ? (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                                      <CheckCircle2 size={12} className="text-emerald-600" />
-                                      In Stock ({stockNum})
-                                    </span>
-                                  ) : stockNum > 0 ? (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
-                                      <AlertTriangle size={12} className="text-amber-600" />
-                                      Low Stock ({stockNum})
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200/80">
-                                      <XCircle size={12} className="text-red-600" />
-                                      Out of Stock
-                                    </span>
-                                  )}
+                                  <StockBadge stock={stockNum} />
                                 </td>
 
                                 {/* Price */}
@@ -1899,7 +1853,7 @@ export default function Admin() {
                                       <Pencil size={15} />
                                     </button>
                                     <a
-                                      href={`/product/${p.id}`}
+                                      href={`/products/${p.id}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="p-2 rounded-xl text-gray-500 hover:text-blue-600 bg-gray-100 hover:bg-blue-50 transition"
@@ -1930,8 +1884,8 @@ export default function Admin() {
 
           {/* Tab 3: Add New Product */}
           {activeTab === "add-product" && (
-            <div className="bg-white rounded-3xl border shadow-sm p-6 md:p-8 max-w-2xl mx-auto">
-              <h2 className="text-2xl font-bold mb-6 text-gray-900">
+            <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6 md:p-8 max-w-2xl mx-auto">
+              <h2 className="hidden md:block text-2xl font-bold mb-6 text-gray-900">
                 Add New Product To Catalog
               </h2>
 
@@ -2053,7 +2007,7 @@ export default function Admin() {
                     <button
                       type="button"
                       onClick={handleAddColorNew}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-white bg-orange-100/80 hover:bg-orange-500 px-3.5 py-1.5 rounded-xl transition cursor-pointer self-start sm:self-auto shadow-2xs"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-white bg-orange-100/80 hover:bg-orange-500 px-3.5 py-2.5 sm:py-1.5 rounded-xl transition cursor-pointer self-start sm:self-auto shadow-2xs"
                     >
                       <Plus size={13} />
                       Add Color Option
@@ -2071,7 +2025,7 @@ export default function Admin() {
                           key={preset.name}
                           type="button"
                           onClick={() => handleAddPresetColorNew(preset)}
-                          className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white hover:bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-lg transition cursor-pointer shadow-2xs"
+                          className="inline-flex items-center gap-1.5 text-xs sm:text-[11px] font-bold bg-white hover:bg-gray-100 border border-gray-200 px-3 sm:px-2.5 py-2.5 sm:py-1 rounded-lg transition cursor-pointer shadow-2xs"
                         >
                           <span
                             className="w-2.5 h-2.5 rounded-full border border-gray-300 shadow-2xs"
@@ -2092,7 +2046,7 @@ export default function Admin() {
                       <button
                         type="button"
                         onClick={handleAddColorNew}
-                        className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700 underline"
+                        className="mt-2 inline-flex min-h-11 sm:min-h-0 items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700 underline"
                       >
                         <Plus size={12} /> Add first color variant
                       </button>
@@ -2144,7 +2098,7 @@ export default function Admin() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveColorNew(idx)}
-                                className="p-1.5 text-red-500 hover:text-white hover:bg-red-500 rounded-lg transition"
+                                className="p-3 sm:p-1.5 text-red-500 hover:text-white hover:bg-red-500 rounded-lg transition"
                                 title="Remove this color"
                               >
                                 <Trash2 size={14} />
@@ -2181,9 +2135,9 @@ export default function Admin() {
 
           {/* Tab 4: Admin Security & Password Settings */}
           {activeTab === "settings" && (
-            <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-gray-200/80 shadow-sm p-6 sm:p-10 space-y-8 animate-fadeIn">
-              <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
-                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 text-orange-600 flex items-center justify-center shrink-0 shadow-xs">
+            <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-gray-200/80 shadow-sm p-4 sm:p-10 space-y-6 sm:space-y-8 animate-fadeIn">
+              <div className="flex items-center gap-4 pb-4 sm:pb-6 border-b border-gray-100">
+                <div className="hidden sm:flex w-14 h-14 rounded-2xl bg-orange-500/10 text-orange-600 items-center justify-center shrink-0 shadow-xs">
                   <ShieldCheck size={28} />
                 </div>
                 <div>
@@ -2248,12 +2202,13 @@ export default function Admin() {
                       onChange={(e) => setCurrentPassword(e.target.value)}
                       required
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
-                      placeholder="Enter your current password to authorize changes"
+                      placeholder="Enter your current password"
                     />
                     <button
                       type="button"
                       onClick={() => setShowCurrentPass(!showCurrentPass)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      aria-label={showCurrentPass ? "Hide password" : "Show password"}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center text-gray-400 hover:text-gray-600 cursor-pointer"
                     >
                       {showCurrentPass ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
@@ -2280,7 +2235,8 @@ export default function Admin() {
                       <button
                         type="button"
                         onClick={() => setShowNewPass(!showNewPass)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                        aria-label={showNewPass ? "Hide password" : "Show password"}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center text-gray-400 hover:text-gray-600 cursor-pointer"
                       >
                         {showNewPass ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
@@ -2306,7 +2262,8 @@ export default function Admin() {
                       <button
                         type="button"
                         onClick={() => setShowConfirmPass(!showConfirmPass)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                        aria-label={showConfirmPass ? "Hide password" : "Show password"}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center text-gray-400 hover:text-gray-600 cursor-pointer"
                       >
                         {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
@@ -2345,13 +2302,13 @@ export default function Admin() {
 
       {/* EYE BUTTON: DELIVERY DETAILS MODAL */}
       {selectedOrderDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 md:p-8 space-y-6 relative">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto overscroll-contain shadow-2xl border border-gray-100 p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 relative">
             {/* Modal Header */}
-            <div className="flex justify-between items-start border-b pb-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h3 className="text-2xl font-black text-gray-900">
+            <div className="flex justify-between items-start gap-3 border-b pb-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h3 className="text-xl sm:text-2xl font-black text-gray-900">
                     Order #{selectedOrderDetails.id} Details
                   </h3>
                   <span className="text-xs uppercase font-bold tracking-wider px-3 py-1 rounded-full bg-orange-100 text-orange-600 border border-orange-200">
@@ -2387,7 +2344,8 @@ export default function Admin() {
 
               <button
                 onClick={() => setSelectedOrderDetails(null)}
-                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition"
+                aria-label="Close order details"
+                className="h-11 w-11 shrink-0 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition"
               >
                 <X size={20} />
               </button>
@@ -2396,7 +2354,7 @@ export default function Admin() {
             {/* Customer & Location Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Customer Contact */}
-              <div className="bg-gray-50 p-5 rounded-2xl border space-y-2">
+              <div className="bg-gray-50 p-4 sm:p-5 rounded-2xl border space-y-2 min-w-0">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                   <User size={15} className="text-orange-500" />
                   Customer Information
@@ -2405,8 +2363,8 @@ export default function Admin() {
                   {selectedOrderDetails.user_name || "Guest Customer"}
                 </p>
                 <p className="text-xs text-gray-600 flex items-center gap-1.5">
-                  <Mail size={13} className="text-gray-400" />
-                  {selectedOrderDetails.user_email || "N/A"}
+                  <Mail size={13} className="text-gray-400 shrink-0" />
+                  <span className="min-w-0 break-all">{selectedOrderDetails.user_email || "N/A"}</span>
                 </p>
                 <p className="text-xs text-gray-600 flex items-center gap-1.5">
                   <Phone size={13} className="text-gray-400" />
@@ -2415,7 +2373,7 @@ export default function Admin() {
               </div>
 
               {/* Delivery Address */}
-              <div className="bg-gray-50 p-5 rounded-2xl border space-y-2">
+              <div className="bg-gray-50 p-4 sm:p-5 rounded-2xl border space-y-2 min-w-0">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                   <MapPin size={15} className="text-orange-500" />
                   Delivery Location
@@ -2449,8 +2407,8 @@ export default function Admin() {
               ) : (
                 <div className="divide-y border rounded-2xl overflow-hidden text-sm">
                   {selectedOrderDetails.items.map((item) => (
-                    <div key={item.id} className="p-3.5 flex items-center justify-between bg-white hover:bg-gray-50 transition">
-                      <div className="flex items-center gap-3">
+                    <div key={item.id} className="p-3 sm:p-3.5 flex items-center justify-between gap-2 bg-white hover:bg-gray-50 transition">
+                      <div className="flex items-center gap-3 min-w-0">
                         {item.color_image || item.product_image ? (
                           <img
                             src={getImageUrl(item.color_image || item.product_image)}
@@ -2462,7 +2420,7 @@ export default function Admin() {
                             <Box size={20} className="text-gray-400" />
                           </div>
                         )}
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-bold text-gray-900 text-xs md:text-sm line-clamp-1">
                             {item.product_name || `Product #${item.product_id}`}
                             {item.color ? (
@@ -2483,7 +2441,7 @@ export default function Admin() {
                           </p>
                         </div>
                       </div>
-                      <span className="font-bold text-gray-900 text-xs md:text-sm">
+                      <span className="font-bold text-gray-900 text-xs md:text-sm shrink-0">
                         ${(Number(item.price) * item.quantity).toFixed(2)}
                       </span>
                     </div>
@@ -2503,7 +2461,7 @@ export default function Admin() {
 
               <button
                 onClick={() => setSelectedOrderDetails(null)}
-                className="bg-black text-white hover:bg-orange-500 px-6 py-2.5 rounded-full text-xs font-bold transition shadow"
+                className="bg-black text-white hover:bg-orange-500 h-11 px-6 rounded-full text-sm sm:text-xs font-bold transition shadow"
               >
                 Close View
               </button>
@@ -2514,11 +2472,11 @@ export default function Admin() {
 
       {/* EDIT PRODUCT & SALES / DISCOUNT MODAL */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 md:p-8 space-y-6 relative">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto overscroll-contain shadow-2xl border border-gray-100 p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 relative">
             {/* Modal Header */}
-            <div className="flex justify-between items-start border-b border-gray-100 pb-4">
-              <div>
+            <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-4">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
                     <Pencil size={16} />
@@ -2534,7 +2492,8 @@ export default function Admin() {
 
               <button
                 onClick={() => setEditingProduct(null)}
-                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition"
+                aria-label="Close"
+                className="h-11 w-11 shrink-0 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition"
                 title="Close Modal"
               >
                 <X size={20} />
@@ -2622,7 +2581,7 @@ export default function Admin() {
 
               {/* Pricing & Sales Section */}
               <div className="bg-gradient-to-br from-orange-50/80 to-amber-50/50 border border-orange-200/90 rounded-2xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="text-xs font-bold uppercase tracking-wider text-orange-950 flex items-center gap-1.5">
                     <Flame size={15} className="text-orange-500 fill-orange-500" />
                     Sales & Discount Pricing
@@ -2653,7 +2612,7 @@ export default function Admin() {
                         key={pct}
                         type="button"
                         onClick={() => applySaleDiscount(pct)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                        className={`px-3 py-2.5 sm:py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                           editOldPrice &&
                           Number(editOldPrice) > Number(editPrice) &&
                           Math.round(((Number(editOldPrice) - Number(editPrice)) / Number(editOldPrice)) * 100) === pct
@@ -2783,7 +2742,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={handleAddColorEdit}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-white bg-orange-100 hover:bg-orange-500 px-3.5 py-1.5 rounded-xl transition cursor-pointer self-start sm:self-auto shadow-2xs"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-white bg-orange-100 hover:bg-orange-500 px-3.5 py-2.5 sm:py-1.5 rounded-xl transition cursor-pointer self-start sm:self-auto shadow-2xs"
                   >
                     <Plus size={13} />
                     Add Color Option
@@ -2801,7 +2760,7 @@ export default function Admin() {
                         key={preset.name}
                         type="button"
                         onClick={() => handleAddPresetColorEdit(preset)}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white hover:bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-lg transition cursor-pointer shadow-2xs"
+                        className="inline-flex items-center gap-1.5 text-xs sm:text-[11px] font-bold bg-white hover:bg-gray-100 border border-gray-200 px-3 sm:px-2.5 py-2.5 sm:py-1 rounded-lg transition cursor-pointer shadow-2xs"
                       >
                         <span
                           className="w-2.5 h-2.5 rounded-full border border-gray-300 shadow-2xs"
@@ -2822,7 +2781,7 @@ export default function Admin() {
                     <button
                       type="button"
                       onClick={handleAddColorEdit}
-                      className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700 underline"
+                      className="mt-2 inline-flex min-h-11 sm:min-h-0 items-center gap-1 text-xs font-bold text-orange-600 hover:text-orange-700 underline"
                     >
                       <Plus size={12} /> Add first color option
                     </button>
@@ -2874,7 +2833,7 @@ export default function Admin() {
                             <button
                               type="button"
                               onClick={() => handleRemoveColorEdit(idx)}
-                              className="p-1.5 text-red-500 hover:text-white hover:bg-red-500 rounded-lg transition"
+                              className="p-3 sm:p-1.5 text-red-500 hover:text-white hover:bg-red-500 rounded-lg transition"
                               title="Delete this color option"
                             >
                               <Trash2 size={14} />
@@ -2899,18 +2858,18 @@ export default function Admin() {
               </div>
 
               {/* Modal Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setEditingProduct(null)}
-                  className="px-5 py-2.5 rounded-full text-xs font-bold text-gray-600 hover:bg-gray-100 transition"
+                  className="h-11 sm:h-auto px-5 sm:py-2.5 rounded-full text-sm sm:text-xs font-bold text-gray-600 hover:bg-gray-100 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isEditSaving || uploadsInFlight > 0}
-                  className="inline-flex items-center gap-2 bg-black hover:bg-orange-500 text-white px-6 py-2.5 rounded-full text-xs font-bold transition shadow-md disabled:opacity-50"
+                  className="inline-flex h-11 sm:h-auto items-center justify-center gap-2 bg-black hover:bg-orange-500 text-white px-6 sm:py-2.5 rounded-full text-sm sm:text-xs font-bold transition shadow-md disabled:opacity-50"
                 >
                   <Save size={14} />
                   {isEditSaving
@@ -2924,6 +2883,75 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {menuOpen && !isDesktop && (
+          <AdminModal title="Menu" onClose={() => setMenuOpen(false)}>
+            <nav aria-label="Admin sections" className="space-y-1">
+              {tabs.map((tab) => {
+                const current = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => goToTab(tab.id)}
+                    aria-current={current ? "page" : undefined}
+                    className={`flex h-12 w-full items-center gap-3 rounded-control px-3 text-left font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare ${
+                      current ? "bg-flare-tint text-flare-press" : "text-ink hover:bg-porcelain"
+                    }`}
+                  >
+                    <tab.icon size={18} aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                    {current && <Check size={18} aria-hidden />}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="mt-3 space-y-1 border-t border-line pt-3">
+              <Link
+                to="/admin-data"
+                onClick={() => setMenuOpen(false)}
+                className="flex h-12 items-center gap-3 rounded-control px-3 font-semibold text-ink transition-colors hover:bg-porcelain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare"
+              >
+                <Sparkles size={18} aria-hidden /> Data Hub
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex h-12 w-full items-center gap-3 rounded-control px-3 text-left font-semibold text-error transition-colors hover:bg-error-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare"
+              >
+                <LogOut size={18} aria-hidden /> Log out
+              </button>
+            </div>
+          </AdminModal>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMobileSidebar && !isDesktop && (
+          <AdminModal title="Filter products" onClose={() => setShowMobileSidebar(false)}>
+            <div className="space-y-6">{productFilters}</div>
+            <div className="sticky -bottom-5 -mx-5 -mb-5 mt-6 flex gap-2 border-t border-line bg-surface p-4 sm:-bottom-6 sm:-mx-6 sm:-mb-6">
+              {hasProductFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="h-12 shrink-0 rounded-control border border-line-strong px-4 font-semibold text-ink transition-colors hover:bg-porcelain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowMobileSidebar(false)}
+                className="h-12 min-w-0 flex-1 rounded-control bg-ink px-4 font-semibold text-white transition-colors hover:bg-night focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-flare"
+              >
+                Show {filteredProducts.length} {filteredProducts.length === 1 ? "product" : "products"}
+              </button>
+            </div>
+          </AdminModal>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {statusChange && (
@@ -2942,7 +2970,7 @@ export default function Admin() {
       </AnimatePresence>
 
       {/* Admin Portal Footer */}
-      <footer className="bg-gray-950 border-t border-gray-800 text-gray-500 text-xs py-6 mt-16 text-center">
+      <footer className="bg-gray-950 border-t border-gray-800 text-gray-500 text-xs py-6 mt-8 md:mt-16 text-center px-4">
         <p>© {new Date().getFullYear()} NOVA Store Admin Portal. Secure Management Console.</p>
       </footer>
     </div>

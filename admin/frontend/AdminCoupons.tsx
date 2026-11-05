@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { AlertCircle, CalendarClock, Loader2, Pause, Pencil, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useToast } from "../../src/context/ToastContext";
+import { useMediaQuery } from "../../src/lib/useMediaQuery";
 import AdminModal from "./AdminModal";
 import CouponFormModal from "./CouponFormModal";
 import { StatusPill } from "./CouponParts";
@@ -43,6 +44,7 @@ export default function AdminCoupons() {
   const [deleting, setDeleting] = useState<Coupon | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const wide = useMediaQuery("(min-width: 768px)");
 
   const apply = useCallback((result: LoadResult) => {
     if (result.coupons) {
@@ -123,15 +125,15 @@ export default function AdminCoupons() {
   };
 
   return (
-    <section className="space-y-6 text-ink" aria-labelledby="coupons-title">
+    <section className="space-y-4 md:space-y-6 text-ink" aria-labelledby="coupons-title">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 id="coupons-title" className="text-2xl font-bold tracking-tight">
+          <h2 id="coupons-title" className="sr-only md:not-sr-only text-2xl font-bold tracking-tight">
             Coupons
           </h2>
-          <p className="mt-1 text-sm text-muted">Codes shoppers enter at checkout. Paused, expired and used-up codes are refused.</p>
+          <p className="md:mt-1 text-sm text-muted">Codes shoppers enter at checkout. Paused, expired and used-up codes are refused.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
           <button type="button" onClick={refresh} disabled={loading} className={secondaryButton}>
             <RefreshCw size={14} className={loading ? "motion-safe:animate-spin" : ""} aria-hidden /> Refresh
           </button>
@@ -141,7 +143,7 @@ export default function AdminCoupons() {
         </div>
       </div>
 
-      <dl className="grid divide-y divide-line rounded-tile border border-line bg-surface sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <dl className="grid grid-cols-3 divide-x divide-line rounded-tile border border-line bg-surface">
         <Stat
           label="Total coupons"
           value={stats.total}
@@ -184,7 +186,21 @@ export default function AdminCoupons() {
           </button>
         </div>
       ) : (
-        coupons.length > 0 && (
+        coupons.length > 0 &&
+        (!wide ? (
+          <div className="grid gap-3">
+            {coupons.map((coupon) => (
+              <CouponCard
+                key={coupon.id}
+                coupon={coupon}
+                pending={pendingId === coupon.id}
+                onToggle={() => handleToggle(coupon)}
+                onEdit={() => setEditing(coupon)}
+                onDelete={() => setDeleting(coupon)}
+              />
+            ))}
+          </div>
+        ) : (
           <div className="overflow-x-auto rounded-tile border border-line bg-surface">
             <table className="w-full min-w-[860px] text-sm">
               <thead className="sticky top-0 bg-surface text-left text-xs text-muted">
@@ -212,7 +228,7 @@ export default function AdminCoupons() {
               </tbody>
             </table>
           </div>
-        )
+        ))
       )}
 
       <AnimatePresence>
@@ -268,10 +284,10 @@ export default function AdminCoupons() {
 
 function Stat({ label, value, note }: { label: string; value: number; note: string }) {
   return (
-    <div className="p-4 sm:p-5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="mt-1 text-3xl font-bold leading-none tabular-nums font-stretch-semi-condensed">{value}</dd>
-      <dd className="mt-2 text-xs text-muted">{note}</dd>
+    <div className="min-w-0 p-3 sm:p-5">
+      <dt className="text-xs sm:text-sm text-muted">{label}</dt>
+      <dd className="mt-1 text-2xl sm:text-3xl font-bold leading-none tabular-nums font-stretch-semi-condensed">{value}</dd>
+      <dd className="mt-2 hidden sm:block text-xs text-muted">{note}</dd>
     </div>
   );
 }
@@ -348,6 +364,78 @@ function CouponRow({ coupon, pending, onToggle, onEdit, onDelete }: CouponRowPro
         </div>
       </td>
     </tr>
+  );
+}
+
+/** One coupon on a phone, where the table can't fit. */
+function CouponCard({ coupon, pending, onToggle, onEdit, onDelete }: CouponRowProps) {
+  const expired = coupon.status === "expired";
+  return (
+    <article className="rounded-tile border border-line bg-surface p-4">
+      <div className="flex items-start justify-between gap-3">
+        <span className="inline-flex h-7 min-w-0 items-center truncate rounded-tag border border-dashed border-line-strong bg-porcelain px-2 text-sm font-bold tracking-wider font-stretch-semi-condensed">
+          {coupon.code}
+        </span>
+        <StatusPill status={coupon.status} />
+      </div>
+      <p className="mt-3 font-semibold">{couponHeadline(coupon.discount_type, coupon.discount_value)}</p>
+      {coupon.description && <p className="text-xs text-muted">{coupon.description}</p>}
+
+      <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 text-sm">
+        <div>
+          <dt className="text-xs text-muted">Min order</dt>
+          <dd className="tabular-nums">{coupon.min_order > 0 ? money(coupon.min_order) : "None"}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Ends</dt>
+          <dd>
+            <ExpiryCell day={coupon.expires_at} expired={expired} />
+          </dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-xs text-muted">Usage</dt>
+          <dd>
+            <UsageMeter used={coupon.used_count} limit={coupon.usage_limit} />
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 flex gap-2">
+        {expired ? (
+          <button type="button" onClick={onEdit} className={`${secondaryButton} h-11 flex-1 px-3`} aria-label={`Change the end date of ${coupon.code}`}>
+            <CalendarClock size={14} aria-hidden /> Extend
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={pending}
+            aria-label={`${coupon.active ? "Pause" : "Resume"} ${coupon.code}`}
+            className={`${secondaryButton} h-11 flex-1 px-3`}
+          >
+            {pending ? (
+              <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden />
+            ) : coupon.active ? (
+              <Pause size={14} aria-hidden />
+            ) : (
+              <Play size={14} aria-hidden />
+            )}
+            {coupon.active ? "Pause" : "Resume"}
+          </button>
+        )}
+        <button type="button" onClick={onEdit} className={`${secondaryButton} h-11 flex-1 px-3`} aria-label={`Edit ${coupon.code}`}>
+          <Pencil size={14} aria-hidden /> Edit
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className={`${button} h-11 w-11 shrink-0 border-error bg-surface px-0 text-error hover:bg-error-tint`}
+          aria-label={`Delete ${coupon.code}`}
+        >
+          <Trash2 size={16} aria-hidden />
+        </button>
+      </div>
+    </article>
   );
 }
 

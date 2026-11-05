@@ -31,7 +31,7 @@ const focusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-
 const controlButton = `inline-flex h-9 items-center gap-1.5 rounded-control border px-3 text-xs font-semibold transition-colors ${focusRing}`;
 const secondaryButton = `${controlButton} border-line-strong bg-surface text-ink hover:bg-porcelain`;
 const dangerButton = `${controlButton} border-error bg-surface text-error hover:bg-error-tint`;
-const linkButton = `inline-flex items-center gap-1 rounded-tag text-xs font-semibold text-muted underline-offset-2 hover:text-ink hover:underline ${focusRing}`;
+const linkButton = `inline-flex min-h-11 sm:min-h-0 items-center gap-1 rounded-tag text-xs font-semibold text-muted underline-offset-2 hover:text-ink hover:underline ${focusRing}`;
 
 export default function ImageUploader({ value, onChange, label, compact = false, onBusyChange }: ImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);

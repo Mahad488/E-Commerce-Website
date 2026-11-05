@@ -28,9 +28,7 @@ npm run dev:admin
 
 ## 🔐 Admin Login Credentials
 
-- **Username**: `nova_admin`
-- **Password**: `Nova@Admin#2024`
-- These are created automatically on first run (from `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `backend/.env`). Change the password from **Security & Password** after your first login.
+Sign in with the `ADMIN_USERNAME` and `ADMIN_PASSWORD` you set in `backend/.env` (or your host's environment settings). They create the first admin account when the `admins` table is empty. There are no built-in credentials. Change the password any time under **Security & Password**.
 
 ---
 
@@ -49,7 +47,9 @@ admin/
 │   ├── Admin.tsx                 # Full Admin Dashboard (Overview, Orders, Catalog, Coupons, Settings)
 │   ├── AdminAnalytics.tsx        # Overview tab: revenue chart, top products, low stock, inbox
 │   ├── AdminLogin.tsx            # Admin sign-in
-│   ├── AdminPortalData.tsx       # Admin Data Hub & Export utility
+│   ├── AdminPortalData.tsx       # Data Hub: live products and orders, JSON export
+│   ├── AdminCards.tsx            # Phone cards for orders and products, status select, stock badge
+│   ├── orderTypes.ts             # Order types and colour helper
 │   ├── ImageUploader.tsx         # Drag & drop photo uploader (main photo + colour variants)
 │   ├── AdminCoupons.tsx          # Coupons tab: stats, table, pause/resume, delete confirmation
 │   ├── CouponFormModal.tsx       # Create / edit coupon form with live ticket preview

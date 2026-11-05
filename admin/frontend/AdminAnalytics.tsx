@@ -16,6 +16,7 @@ import {
 
 import { API_BASE_URL } from "../../src/config/api";
 import { getImageUrl } from "../../src/lib/catalog";
+import { useMediaQuery } from "../../src/lib/useMediaQuery";
 
 interface DayPoint {
   date: string;
@@ -73,10 +74,12 @@ function shortDate(iso: string) {
 function RevenueChart({ data }: { data: DayPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
   const [asTable, setAsTable] = useState(false);
+  // The chart scales with its card, so phones get a narrower drawing to keep the labels readable.
+  const compact = useMediaQuery("(max-width: 639px)");
 
-  const width = 720;
-  const height = 240;
-  const pad = { top: 16, right: 12, bottom: 28, left: 52 };
+  const width = compact ? 360 : 720;
+  const height = compact ? 220 : 240;
+  const pad = compact ? { top: 16, right: 8, bottom: 28, left: 44 } : { top: 16, right: 12, bottom: 28, left: 52 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const max = niceMax(Math.max(...data.map((d) => d.revenue)));
@@ -94,7 +97,7 @@ function RevenueChart({ data }: { data: DayPoint[] }) {
   };
 
   return (
-    <div className="bg-white rounded-3xl border shadow-sm p-6">
+    <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <h3 className="font-bold text-gray-900">Revenue, last {data.length} days</h3>
@@ -104,7 +107,7 @@ function RevenueChart({ data }: { data: DayPoint[] }) {
         </div>
         <button
           onClick={() => setAsTable((v) => !v)}
-          className="text-xs font-semibold text-gray-600 border rounded-full px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5"
+          className="min-h-11 sm:min-h-0 text-xs font-semibold text-gray-600 border rounded-full px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5"
         >
           {asTable ? <BarChart3 size={13} /> : <Table2 size={13} />}
           {asTable ? "Show chart" : "Show table"}
@@ -150,7 +153,11 @@ function RevenueChart({ data }: { data: DayPoint[] }) {
               const h = (d.revenue / max) * plotH;
               const x = pad.left + i * slot + (slot - barW) / 2;
               const y = pad.top + plotH - h;
-              const showLabel = data.length <= 14 ? i % 2 === 0 || i === data.length - 1 : i % 4 === 0;
+              const showLabel = compact
+                ? i % Math.ceil(data.length / 4) === 0
+                : data.length <= 14
+                ? i % 2 === 0 || i === data.length - 1
+                : i % 4 === 0;
               return (
                 <g key={d.date}>
                   {hover === i && (
@@ -180,7 +187,13 @@ function RevenueChart({ data }: { data: DayPoint[] }) {
           {hover !== null && (
             <div
               className="pointer-events-none absolute -translate-x-1/2 bg-gray-950 text-white text-xs rounded-xl px-3 py-2 shadow-xl whitespace-nowrap"
-              style={{ left: `${((pad.left + hover * slot + slot / 2) / width) * 100}%`, top: 0 }}
+              style={{
+                // Near the edges on a phone, keep the tooltip inside the card.
+                left: `${compact
+                  ? Math.min(72, Math.max(28, ((pad.left + hover * slot + slot / 2) / width) * 100))
+                  : ((pad.left + hover * slot + slot / 2) / width) * 100}%`,
+                top: 0,
+              }}
             >
               <p className="font-bold">{shortDate(data[hover].date)}</p>
               <p className="tabular-nums">
@@ -225,7 +238,7 @@ function BarList({ rows, format }: { rows: { label: string; value: number; sub?:
 
 function StatTile({ label, value, icon: Icon, hint }: { label: string; value: string; icon: typeof DollarSign; hint?: string }) {
   return (
-    <div className="bg-white p-5 rounded-3xl border shadow-sm">
+    <div className="bg-white p-4 sm:p-5 rounded-3xl border shadow-sm min-w-0">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-gray-500">{label}</p>
         <span className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
@@ -336,7 +349,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
   if (!stats) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex bg-white border rounded-full p-1 text-xs font-bold" role="group" aria-label="Date range">
           {[7, 14, 30].map((d) => (
@@ -346,7 +359,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
                 setDays(d);
                 refresh(d);
               }}
-              className={`px-4 py-1.5 rounded-full transition ${days === d ? "bg-gray-950 text-white" : "text-gray-600 hover:text-gray-950"}`}
+              className={`px-4 py-2.5 sm:py-1.5 rounded-full transition ${days === d ? "bg-gray-950 text-white" : "text-gray-600 hover:text-gray-950"}`}
             >
               {d} days
             </button>
@@ -354,7 +367,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
         </div>
         <button
           onClick={() => refresh(days)}
-          className="text-xs font-semibold text-gray-600 flex items-center gap-1.5 hover:text-gray-950"
+          className="min-h-11 sm:min-h-0 text-xs font-semibold text-gray-600 flex items-center gap-1.5 hover:text-gray-950"
         >
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
           Refresh
@@ -371,11 +384,11 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
       <RevenueChart data={stats.revenueByDay} />
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-3xl border shadow-sm p-6">
+        <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="font-bold text-gray-900">Orders by status</h3>
             {onGoToOrders && (
-              <button onClick={onGoToOrders} className="text-xs font-bold text-orange-600 hover:underline">
+              <button onClick={onGoToOrders} className="min-h-11 sm:min-h-0 text-xs font-bold text-orange-600 hover:underline">
                 Manage
               </button>
             )}
@@ -383,7 +396,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
           <BarList rows={statusRows} format={(n) => `${n}`} />
         </div>
 
-        <div className="bg-white rounded-3xl border shadow-sm p-6">
+        <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
           <h3 className="font-bold text-gray-900 mb-5">Top products (units sold)</h3>
           <BarList
             rows={stats.topProducts.map((p) => ({ label: p.name, value: p.unitsSold, sub: money(p.revenue) }))}
@@ -391,7 +404,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
           />
         </div>
 
-        <div className="bg-white rounded-3xl border shadow-sm p-6">
+        <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
           <h3 className="font-bold text-gray-900 mb-5">Revenue by category</h3>
           <BarList rows={stats.categoryRevenue.map((c) => ({ label: c.category, value: c.revenue }))} format={money} />
           {stats.totalDiscounts > 0 && (
@@ -403,14 +416,14 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-3xl border shadow-sm p-6">
+        <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               <AlertTriangle size={17} className="text-amber-500" />
               Low stock (≤ {stats.lowStockThreshold})
             </h3>
             {onGoToProducts && (
-              <button onClick={onGoToProducts} className="text-xs font-bold text-orange-600 hover:underline">
+              <button onClick={onGoToProducts} className="min-h-11 sm:min-h-0 text-xs font-bold text-orange-600 hover:underline">
                 Restock
               </button>
             )}
@@ -440,7 +453,7 @@ export default function AdminAnalytics({ onGoToProducts, onGoToOrders }: AdminAn
           )}
         </div>
 
-        <div className="bg-white rounded-3xl border shadow-sm p-6">
+        <div className="bg-white rounded-3xl border shadow-sm p-4 sm:p-6">
           <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
             <Inbox size={17} className="text-orange-500" />
             Contact inbox

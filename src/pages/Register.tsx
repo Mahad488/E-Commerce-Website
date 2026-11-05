@@ -176,7 +176,9 @@ export default function Register() {
       console.error("Google token client error:", err);
       try {
         win.google.accounts.id.prompt();
-      } catch {}
+      } catch {
+        // Google's prompt is a fallback; the error above is already logged.
+      }
     }
   };
 

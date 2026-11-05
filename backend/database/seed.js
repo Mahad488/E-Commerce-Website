@@ -1,7 +1,8 @@
 /**
- * Demo catalogue, coupons, reviews and a demo shopper.
+ * Demo catalogue, coupons, reviews and sample orders.
  * Only runs when the products table is empty, so it never touches a real catalogue.
  */
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 
 const img = (id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=800&q=80`;
@@ -249,10 +250,11 @@ const COUPONS = [
   ["FREESHIP", "Free shipping on any order", "shipping", 0, 0],
 ];
 
-const DEMO_USER = {
+// Owns the sample orders on a fresh install. It gets a random password, so nobody can sign in
+// with it, and a reserved address, so status changes on sample orders never email a real person.
+const SAMPLE_CUSTOMER = {
   name: "Alex Morgan",
-  email: "demo@nova.store",
-  password: "Demo@1234",
+  email: "sample.customer@example.com",
   phone: "03001234567",
   address: "House 12, Street 4, F-7/2",
   city: "Islamabad",
@@ -269,14 +271,22 @@ async function seedCoupons(db) {
   }
 }
 
-async function seedDemoUser(db) {
-  const [existing] = await db.query("SELECT id FROM users WHERE email = ?", [DEMO_USER.email]);
+async function seedSampleCustomer(db) {
+  const [existing] = await db.query("SELECT id FROM users WHERE email = ?", [SAMPLE_CUSTOMER.email]);
   if (existing.length > 0) return existing[0].id;
 
-  const hashed = await bcrypt.hash(DEMO_USER.password, 12);
+  const unusable = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12);
   const [result] = await db.query(
     "INSERT INTO users (name, email, password, phone, address, city, country) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [DEMO_USER.name, DEMO_USER.email, hashed, DEMO_USER.phone, DEMO_USER.address, DEMO_USER.city, DEMO_USER.country]
+    [
+      SAMPLE_CUSTOMER.name,
+      SAMPLE_CUSTOMER.email,
+      unusable,
+      SAMPLE_CUSTOMER.phone,
+      SAMPLE_CUSTOMER.address,
+      SAMPLE_CUSTOMER.city,
+      SAMPLE_CUSTOMER.country,
+    ]
   );
   return result.insertId;
 }
@@ -323,10 +333,10 @@ async function seedDemoOrders(db, userId, productIds) {
         shipping.toFixed(2),
         total.toFixed(2),
         entry.status,
-        DEMO_USER.address,
-        DEMO_USER.phone,
-        DEMO_USER.city,
-        DEMO_USER.country,
+        SAMPLE_CUSTOMER.address,
+        SAMPLE_CUSTOMER.phone,
+        SAMPLE_CUSTOMER.city,
+        SAMPLE_CUSTOMER.country,
         paid ? "Credit/Debit Card (Visa)" : "Cash on Delivery (COD)",
         paid ? "Paid" : "Pending",
         paid ? `TXN-CARD-${100000 + entry.daysAgo * 7919}` : `COD-${200000 + entry.daysAgo * 31}`,
@@ -356,11 +366,7 @@ async function seedIfEmpty(db, { withDemoOrders = process.env.SEED_DEMO_ORDERS !
   await seedCoupons(db);
 
   const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM products");
-  if (Number(count) > 0) {
-    // Existing catalogue: leave it alone, but make sure the demo login works in development.
-    if (process.env.NODE_ENV !== "production") await seedDemoUser(db);
-    return { seeded: false };
-  }
+  if (Number(count) > 0) return { seeded: false };
 
   const productIds = [];
   for (const [index, p] of PRODUCTS.entries()) {
@@ -397,13 +403,12 @@ async function seedIfEmpty(db, { withDemoOrders = process.env.SEED_DEMO_ORDERS !
      SET p.rating = r.avg_rating`
   );
 
-  const demoUserId = await seedDemoUser(db);
   if (withDemoOrders) {
-    await seedDemoOrders(db, demoUserId, productIds);
+    await seedDemoOrders(db, await seedSampleCustomer(db), productIds);
   }
 
-  console.log(`[db] Seeded ${PRODUCTS.length} products, ${REVIEWS.length} reviews, ${COUPONS.length} coupons and the demo shopper.`);
+  console.log(`[db] Seeded ${PRODUCTS.length} products, ${REVIEWS.length} reviews, ${COUPONS.length} coupons and the sample orders.`);
   return { seeded: true };
 }
 
-module.exports = { seedIfEmpty, DEMO_USER, PRODUCTS };
+module.exports = { seedIfEmpty, PRODUCTS };

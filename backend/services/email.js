@@ -28,6 +28,9 @@ function smtpConfig() {
     // Port 465 uses TLS from the start; 587 and 25 upgrade with STARTTLS.
     secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
     auth: user ? { user, pass: process.env.SMTP_PASS || "" } : undefined,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 8000,
   };
 }
 
@@ -124,32 +127,116 @@ function printPreview({ to, subject, text, savedTo }) {
   console.log(lines.join("\n"));
 }
 
+async function sendViaBrevo({ to, subject, html, text }) {
+  const apiKey = (process.env.BREVO_API_KEY || "").trim();
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || "muhammadmahad2021@gmail.com";
+  const senderName = process.env.MAIL_FROM_NAME || "NOVA Store";
+
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "api-key": apiKey,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: html,
+      textContent: text,
+    }),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.message || `Brevo API HTTP ${res.status}`);
+  }
+  return { delivered: true, messageId: body.messageId || "brevo-sent" };
+}
+
+async function sendViaResend({ to, subject, html, text }) {
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+  const from = process.env.RESEND_FROM || "NOVA Store <onboarding@resend.dev>";
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.message || `Resend API HTTP ${res.status}`);
+  }
+  return { delivered: true, messageId: body.id || "resend-sent" };
+}
+
 /**
- * Renders and sends one email. Resolves to { delivered: true, messageId } when it went
- * through SMTP, or { delivered: false } when SMTP isn't configured.
+ * Renders and sends one email. Resolves to { delivered: true, messageId } when delivered
+ * via Brevo API, Resend API, or SMTP, or { delivered: false } when unconfigured.
  */
 async function sendEmail({ to, subject, template, data = {} }) {
   const { html, text } = renderEmail(template, { subject, ...data });
 
+  // 1. Brevo REST API (HTTPS Port 443 — works smoothly on Render Free Tier)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const res = await sendViaBrevo({ to, subject, html, text });
+      console.log(`[email:brevo] Sent "${template}" to ${maskEmail(to)}`);
+      return res;
+    } catch (err) {
+      console.error(`[email:brevo] Failed to send "${template}" to ${maskEmail(to)}:`, err.message);
+      return { delivered: false, error: err.message };
+    }
+  }
+
+  // 2. Resend REST API (HTTPS Port 443 — works smoothly on Render Free Tier)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await sendViaResend({ to, subject, html, text });
+      console.log(`[email:resend] Sent "${template}" to ${maskEmail(to)}`);
+      return res;
+    } catch (err) {
+      console.error(`[email:resend] Failed to send "${template}" to ${maskEmail(to)}:`, err.message);
+      return { delivered: false, error: err.message };
+    }
+  }
+
+  // 3. Fallback to Nodemailer SMTP
   if (!smtpConfig()) {
     if (isProduction) {
-      console.warn(`[email] SMTP is not configured; "${template}" email to ${maskEmail(to)} was not sent.`);
+      console.warn(`[email] No email service configured (BREVO_API_KEY, RESEND_API_KEY or SMTP_HOST); "${template}" to ${maskEmail(to)} was not sent.`);
     } else {
       printPreview({ to, subject, text, savedTo: savePreview(template, html) });
     }
     return { delivered: false };
   }
 
-  const info = await getTransporter().sendMail({
-    from: mailFrom(),
-    replyTo: supportEmail(),
-    to,
-    subject,
-    html,
-    text,
-  });
-  console.log(`[email] Sent "${template}" to ${maskEmail(to)} (${info.messageId})`);
-  return { delivered: true, messageId: info.messageId };
+  try {
+    const info = await getTransporter().sendMail({
+      from: mailFrom(),
+      replyTo: supportEmail(),
+      to,
+      subject,
+      html,
+      text,
+    });
+    console.log(`[email] Sent "${template}" to ${maskEmail(to)} (${info.messageId})`);
+    return { delivered: true, messageId: info.messageId };
+  } catch (err) {
+    console.error(`[email] SMTP send failed: ${err.message}`);
+    return { delivered: false, error: err.message };
+  }
 }
 
 /**

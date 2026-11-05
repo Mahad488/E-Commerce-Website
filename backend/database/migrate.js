@@ -2,6 +2,7 @@
  * Creates every table the API needs and upgrades older tables in place.
  * Runs automatically when the server starts and from `npm run db:setup`.
  */
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
@@ -80,16 +81,32 @@ async function ensureDefaultAdmin(db) {
   const [rows] = await db.query("SELECT id FROM admins LIMIT 1");
   if (rows.length > 0) return false;
 
-  const username = (process.env.ADMIN_USERNAME || "nova_admin").trim();
-  const password = (process.env.ADMIN_PASSWORD || "Nova@Admin#2024").trim();
-  const hashed = await bcrypt.hash(password, 10);
-
-  await db.query("INSERT INTO admins (username, password) VALUES (?, ?)", [username, hashed]);
-  console.log(`[db] Created default admin account "${username}".`);
-  if (!process.env.ADMIN_PASSWORD) {
-    console.warn("[db] Using the default admin password — change it from the admin portal settings.");
+  // There is no built-in admin password: the first account comes from the owner's own settings.
+  const username = (process.env.ADMIN_USERNAME || "").trim();
+  const password = (process.env.ADMIN_PASSWORD || "").trim();
+  if (!username || !password) {
+    console.warn("[db] No admin account exists yet. Set ADMIN_USERNAME and ADMIN_PASSWORD, then restart the API to create one.");
+    return false;
   }
+
+  const hashed = await bcrypt.hash(password, 10);
+  await db.query("INSERT INTO admins (username, password) VALUES (?, ?)", [username, hashed]);
+  console.log(`[db] Created admin account "${username}".`);
   return true;
+}
+
+/**
+ * The old seeded test shopper had a publicly documented password. Keep the account and its
+ * orders, but move it off that address and give it a random password so nobody can sign in.
+ * Runs once: afterwards no row has the old address.
+ */
+async function lockOldTestAccount(db) {
+  const [rows] = await db.query("SELECT id FROM users WHERE email = ?", ["demo@nova.store"]);
+  for (const { id } of rows) {
+    const unusable = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+    await db.query("UPDATE users SET email = ?, password = ? WHERE id = ?", [`sample-customer-${id}@example.com`, unusable, id]);
+    console.log("[db] Locked the old test shopper account. Its orders are kept, but it can no longer sign in.");
+  }
 }
 
 async function ensureSchema(db) {
@@ -116,6 +133,8 @@ async function ensureSchema(db) {
 
   // Older databases stored totals without a subtotal; backfill so analytics stay correct.
   await db.query("UPDATE orders SET subtotal = total_amount WHERE subtotal = 0 AND total_amount > 0");
+
+  await lockOldTestAccount(db);
 
   const createdAdmin = await ensureDefaultAdmin(db);
   return { createdAdmin };

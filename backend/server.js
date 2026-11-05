@@ -63,29 +63,59 @@ app.get("/api/health", async (req, res) => {
 
 app.get("/api/email-status", async (req, res) => {
   const { smtpConfig, getTransporter } = require("./services/email");
+
+  // Check Brevo REST API
+  if (process.env.BREVO_API_KEY) {
+    return res.json({
+      configured: true,
+      ready: true,
+      provider: "Brevo API (HTTPS / Port 443)",
+      note: "Works seamlessly on Render Free Tier without SMTP port blocks.",
+      sender: process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || "muhammadmahad2021@gmail.com",
+    });
+  }
+
+  // Check Resend REST API
+  if (process.env.RESEND_API_KEY) {
+    return res.json({
+      configured: true,
+      ready: true,
+      provider: "Resend API (HTTPS / Port 443)",
+      note: "Works seamlessly on Render Free Tier without SMTP port blocks.",
+      from: process.env.RESEND_FROM || "NOVA Store <onboarding@resend.dev>",
+    });
+  }
+
   const config = smtpConfig();
   if (!config) {
     return res.json({
       configured: false,
-      message: "SMTP is NOT configured in Render Environment Variables (SMTP_HOST is empty).",
+      message: "No email provider configured. Set BREVO_API_KEY, RESEND_API_KEY or SMTP_HOST in Environment Variables.",
     });
   }
+
   try {
     await getTransporter().verify();
     return res.json({
       configured: true,
       ready: true,
+      provider: "SMTP (Nodemailer)",
       host: config.host,
       port: config.port,
       user: config.auth?.user ? config.auth.user.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
       message: "SMTP connection verified! Server is ready to send emails.",
     });
   } catch (err) {
+    const isRenderFreeBlock = err.code === "ETIMEDOUT" || err.message?.includes("timeout");
     return res.status(500).json({
       configured: true,
       ready: false,
+      provider: "SMTP",
       error: err.message,
       code: err.code,
+      recommendation: isRenderFreeBlock
+        ? "Render Free Tier blocks outbound SMTP ports 25, 465, and 587. Add BREVO_API_KEY (from brevo.com) to Render environment to send emails over unblocked HTTPS."
+        : "Check SMTP credentials and host configuration.",
     });
   }
 });

@@ -19,7 +19,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { API_BASE_URL } from "../config/api";
-import { DEMO_CREDENTIALS, getRedirectTarget, loginRequest, GOOGLE_CLIENT_ID, googleLoginRequest } from "../lib/auth";
+import { getRedirectTarget, GOOGLE_CLIENT_ID, googleLoginRequest } from "../lib/auth";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -130,25 +130,6 @@ export default function Register() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Skip sign-up and explore with the seeded demo shopper (a real account).
-  const handleQuickDemo = async () => {
-    setApiError("");
-    setLoading(true);
-    const result = await loginRequest(DEMO_CREDENTIALS.email, DEMO_CREDENTIALS.password);
-    setLoading(false);
-    if (!result.ok || !result.user || !result.token) {
-      setApiError(
-        result.network
-          ? result.message || "Can't reach the server."
-          : "The demo account isn't set up yet. Run `npm run db:setup` in the backend folder."
-      );
-      return;
-    }
-    setSession(result.user, result.token);
-    showToast("Signed in as the demo shopper ✨", "success");
-    navigate(getRedirectTarget(location), { replace: true });
   };
 
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -343,14 +324,7 @@ export default function Register() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setName("Apple User");
-                  setEmail("apple.signup@example.com");
-                  setPassword("StrongPass123!");
-                  setConfirmPassword("StrongPass123!");
-                  setAccepted(true);
-                  showToast("Apple ID simulated! Form auto-filled.", "info");
-                }}
+                onClick={() => showToast("Apple sign-in isn't available yet. Use Google or your email.", "info")}
                 className="flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 text-xs sm:text-sm font-bold text-gray-700 transition active:scale-95 shadow-xs"
               >
                 <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
@@ -633,17 +607,6 @@ export default function Register() {
                 )}
               </button>
 
-              {/* Quick Demo Access Bar */}
-              <div className="pt-1 text-center">
-                <button
-                  type="button"
-                  onClick={handleQuickDemo}
-                  className="w-full bg-orange-50 hover:bg-orange-100 border border-orange-200/80 text-orange-800 text-xs font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2"
-                >
-                  <Sparkles size={14} className="text-orange-600" />
-                  <span>Just looking? Use the demo account instead</span>
-                </button>
-              </div>
             </form>
           </div>
 

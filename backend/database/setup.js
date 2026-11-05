@@ -8,7 +8,7 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 
 const mysql = require("mysql2/promise");
 const { ensureSchema } = require("./migrate");
-const { seedIfEmpty, DEMO_USER } = require("./seed");
+const { seedIfEmpty } = require("./seed");
 
 async function main() {
   const database = process.env.DB_NAME || "nova_ecommerce";
@@ -28,18 +28,15 @@ async function main() {
 
   const db = await mysql.createConnection({ ...connectionConfig, database });
   const { createdAdmin } = await ensureSchema(db);
-  const { seeded } = await seedIfEmpty(db);
+  await seedIfEmpty(db);
   await db.end();
 
   console.log("\n✅ Setup complete.");
-  if (seeded || process.env.NODE_ENV !== "production") {
-    console.log(`   Demo shopper:  ${DEMO_USER.email} / ${DEMO_USER.password}`);
-  }
-  if (createdAdmin) {
-    console.log(`   Admin portal:  ${process.env.ADMIN_USERNAME || "nova_admin"} / ${process.env.ADMIN_PASSWORD ? "(from .env)" : "Nova@Admin#2024"}`);
-  } else {
-    console.log("   Admin portal:  your existing admin account (unchanged)");
-  }
+  console.log(
+    createdAdmin
+      ? "   Admin portal:  created from ADMIN_USERNAME / ADMIN_PASSWORD in .env"
+      : "   Admin portal:  sign in with your admin account (a new database needs ADMIN_USERNAME and ADMIN_PASSWORD in .env)"
+  );
   console.log("   Coupons:       WELCOME10, SAVE15, NOVA20, FREESHIP\n");
 }
 

@@ -61,8 +61,8 @@ const SECTIONS: { title: string; items: FaqItem[] }[] = [
     items: [
       {
         q: "Which payment methods do you accept?",
-        text: "Cash on delivery, credit/debit card, and mobile wallets (JazzCash, EasyPaisa).",
-        a: "Cash on delivery, credit/debit cards and mobile wallets (JazzCash and EasyPaisa). In this demo store, card and wallet payments are simulated and nothing is charged.",
+        text: "Cash on delivery and credit/debit card.",
+        a: "Cash on delivery and credit/debit cards. Card payments are taken on Stripe's secure page, so NOVA never sees your card number.",
       },
       {
         q: "How do coupon codes work?",

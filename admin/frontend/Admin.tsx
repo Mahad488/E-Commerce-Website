@@ -116,7 +116,7 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState<"overview" | "orders" | "products" | "add-product" | "coupons" | "settings">("overview");
 
   // Security & Password Settings State
-  const [adminUsername, setAdminUsername] = useState("nova_admin");
+  const [adminUsername, setAdminUsername] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -2227,7 +2227,7 @@ export default function Admin() {
                       onChange={(e) => setAdminUsername(e.target.value)}
                       required
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm text-gray-900 font-medium outline-none focus:border-orange-500 focus:bg-white transition"
-                      placeholder="e.g. nova_admin"
+                      placeholder="Admin username"
                     />
                   </div>
                   <p className="text-[11px] text-gray-400 mt-1.5">

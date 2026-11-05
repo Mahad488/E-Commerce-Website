@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, Eye, EyeOff, Lock, User, ArrowLeft, Key } from "lucide-react";
+import { ShieldCheck, Eye, EyeOff, Lock, User, ArrowLeft } from "lucide-react";
 import { API_BASE_URL } from "../../src/config/api";
 
 export default function AdminLogin() {
@@ -74,12 +74,6 @@ export default function AdminLogin() {
     }
   };
 
-  const handleAutoFill = () => {
-    setUsername("nova_admin");
-    setPassword("Nova@Admin#2024");
-    setError("");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black flex items-center justify-center px-4 py-12 relative overflow-hidden">
       {/* Background glow */}
@@ -129,7 +123,7 @@ export default function AdminLogin() {
                 <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="e.g. nova_admin"
+                  placeholder="Enter admin username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
@@ -181,17 +175,6 @@ export default function AdminLogin() {
               )}
             </button>
 
-            {/* Auto-fill Helper */}
-            <div className="pt-2 border-t border-white/10 flex justify-center">
-              <button
-                type="button"
-                onClick={handleAutoFill}
-                className="py-2 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition border border-white/5 cursor-pointer"
-              >
-                <Key size={13} className="text-orange-400" />
-                <span>Fill Default Credentials</span>
-              </button>
-            </div>
           </form>
 
           <p className="text-center text-gray-600 text-xs mt-6">

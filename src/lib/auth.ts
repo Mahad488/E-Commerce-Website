@@ -2,9 +2,6 @@ import type { Location } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
 import type { AuthUser } from "../context/AuthContext";
 
-/** Seeded by `npm run db:setup` (backend/database/seed.js). */
-export const DEMO_CREDENTIALS = { email: "demo@nova.store", password: "Demo@1234" };
-
 export interface LoginResult {
   ok: boolean;
   user?: AuthUser;

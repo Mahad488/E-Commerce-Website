@@ -53,9 +53,9 @@ router.post("/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 20, name: "admi
       }
     } else {
       // No admin rows yet (e.g. a brand-new database): allow the .env credentials once.
-      const expectedUser = (process.env.ADMIN_USERNAME || "nova_admin").trim();
-      const expectedPass = (process.env.ADMIN_PASSWORD || "Nova@Admin#2024").trim();
-      if (cleanUser === expectedUser && cleanPass === expectedPass) {
+      const expectedUser = (process.env.ADMIN_USERNAME || "").trim();
+      const expectedPass = (process.env.ADMIN_PASSWORD || "").trim();
+      if (expectedUser && expectedPass && cleanUser === expectedUser && cleanPass === expectedPass) {
         const hashed = await bcrypt.hash(cleanPass, 10);
         await db.query("INSERT INTO admins (username, password) VALUES (?, ?)", [expectedUser, hashed]);
         verifiedUser = expectedUser;

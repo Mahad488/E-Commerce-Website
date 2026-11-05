@@ -8,6 +8,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const cloudinary = require("cloudinary").v2;
 
 const UPLOADS_ROOT = path.join(__dirname, "..", "uploads");
 
@@ -45,10 +46,47 @@ const localDriver = {
   },
 };
 
-const drivers = { local: localDriver };
+const cloudinaryDriver = {
+  async save({ buffer, ext, folder }) {
+    const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+    const apiKey = (process.env.CLOUDINARY_API_KEY || "").trim();
+    const apiSecret = (process.env.CLOUDINARY_API_SECRET || "").trim();
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error("Cloudinary credentials missing: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET are required.");
+    }
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `nova/${folder}`,
+          resource_type: "image",
+          format: ext,
+        },
+        (error, result) => {
+          if (error) return reject(new Error(`Cloudinary upload failed: ${error.message}`));
+          resolve(result.secure_url);
+        }
+      );
+      uploadStream.end(buffer);
+    });
+  },
+};
+
+const drivers = { local: localDriver, cloudinary: cloudinaryDriver };
 
 function getDriver() {
-  const name = (process.env.STORAGE_DRIVER || "local").trim().toLowerCase();
+  const hasCloudinary = Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+  const defaultDriver = hasCloudinary ? "cloudinary" : "local";
+  const name = (process.env.STORAGE_DRIVER || defaultDriver).trim().toLowerCase();
   const driver = drivers[name];
   if (!driver) {
     throw new Error(`Unknown STORAGE_DRIVER "${name}". Supported: ${Object.keys(drivers).join(", ")}`);

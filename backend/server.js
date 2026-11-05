@@ -61,6 +61,35 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+app.get("/api/email-status", async (req, res) => {
+  const { smtpConfig, getTransporter } = require("./services/email");
+  const config = smtpConfig();
+  if (!config) {
+    return res.json({
+      configured: false,
+      message: "SMTP is NOT configured in Render Environment Variables (SMTP_HOST is empty).",
+    });
+  }
+  try {
+    await getTransporter().verify();
+    return res.json({
+      configured: true,
+      ready: true,
+      host: config.host,
+      port: config.port,
+      user: config.auth?.user ? config.auth.user.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
+      message: "SMTP connection verified! Server is ready to send emails.",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      configured: true,
+      ready: false,
+      error: err.message,
+      code: err.code,
+    });
+  }
+});
+
 // Unknown API routes → JSON 404 instead of Express's HTML page.
 app.use("/api", (req, res) => {
   res.status(404).json({ success: false, message: `No API route for ${req.method} ${req.originalUrl}` });

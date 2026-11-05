@@ -184,4 +184,14 @@ async function checkEmailTransport() {
   }
 }
 
-module.exports = { sendEmail, queueEmail, checkEmailTransport, renderEmail, escapeHtml, storeUrl, supportEmail };
+module.exports = {
+  sendEmail,
+  queueEmail,
+  checkEmailTransport,
+  renderEmail,
+  escapeHtml,
+  storeUrl,
+  supportEmail,
+  getTransporter,
+  smtpConfig,
+};
